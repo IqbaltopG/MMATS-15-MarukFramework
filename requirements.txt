@@ -1,0 +1,17 @@
+# dependensi Python untuk MARUK Framework (REAL_DRONE)
+
+# PyMavlink untuk komunikasi ke ArduPilot (DekeFPV)
+pymavlink==2.4.41
+
+# Ultralytics untuk model YOLOv8
+ultralytics==8.1.0
+
+# Pyserial untuk komunikasi serial UART
+pyserial
+
+# =======================================================================
+# ⚠️ PERINGATAN KHUSUS NVIDIA JETSON NANO (Ubuntu 18.04) ⚠️
+# JANGAN menginstall opencv-python lewat pip!
+# Jetson Nano sudah memiliki OpenCV dengan dukungan CUDA & GStreamer
+# yang terinstall secara sistem (OS level).
+# =======================================================================

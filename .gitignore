@@ -1,0 +1,35 @@
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE / OS Files
+.vscode/
+.DS_Store
+
+# Logs
+*.log
+*.sqlite3
+
+# ML Models (Supaya github lu gak bengkak nahan file .pt / .engine)
+*.pt
+*.engine
+*.trt
+*.onnx
+
+# Dataset
+dataset/
+*.mp4
+*.jpg
+*.jpeg
+*.png
+
+# Markdown (Biar repo bersih dari catatan internal)
+*.md
+!README.md
