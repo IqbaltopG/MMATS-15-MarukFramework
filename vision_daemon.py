@@ -2,12 +2,13 @@ import asyncio
 import cv2
 import json
 import socket
+import numpy as np
 import config
-from ultralytics import YOLO
 
 # =====================================================================
-# MARUK FRAMEWORK: VISION DAEMON (SENSE LAYER)
-# Tugas: Membaca kamera fisik, inferensi AI, dan kirim hasil via UDP Multicast.
+# MARUK FRAMEWORK: VISION DAEMON (PURE OPENCV DNN)
+# Tugas: Membaca kamera fisik, inferensi AI murni tanpa Ultralytics, 
+# dan kirim hasil via UDP Multicast.
 # =====================================================================
 
 def main():
@@ -23,11 +24,16 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
     cap.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
 
-    print(f"[VISION] Memuat Model AI dari {config.MODEL_PATH}...")
-    # NOTE: Untuk TensorRT, pastikan MODEL_PATH mengarah ke file .engine
-    model = YOLO(config.MODEL_PATH)
+    print(f"[VISION] Memuat Model ONNX dari {config.MODEL_PATH} via OpenCV DNN...")
+    # Kita pake pure OpenCV DNN (Nggak butuh Ultralytics sama sekali)
+    # Pastikan config.MODEL_PATH nembak ke file .onnx
+    net = cv2.dnn.readNetFromONNX(config.MODEL_PATH)
+    
+    # Wajib buat Jetson Nano: Pake CUDA Backend
+    net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+    net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
 
-    # Setup UDP Multicast Socket (Fire and Forget)
+    # Setup UDP Multicast Socket
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     
     print("[VISION] Daemon berjalan. Memulai streaming inferensi...")
@@ -38,11 +44,17 @@ def main():
             print("[VISION] Frame drop, mencoba lagi...")
             continue
             
-        # Inferensi YOLO
-        results = model.predict(source=frame, conf=config.CONFIDENCE_THRESHOLD, verbose=False)
+        # 1. Pre-Processing YOLOv8 (Convert frame ke blob 640x640)
+        blob = cv2.dnn.blobFromImage(frame, 1/255.0, (640, 640), swapRB=True, crop=False)
+        net.setInput(blob)
         
-        # Ekstraksi Bounding Box (Kosongan / Framework Mode)
-        # TODO: Tambahkan logika spesifik untuk mem-parsing bounding box jadi koordinat error_x, error_y
+        # 2. Forward Pass (Inferensi CUDA murni)
+        preds = net.forward()
+        
+        # 3. Post-Processing Manual (Cari confidence tertinggi)
+        # (Karena kita buang Ultralytics, kita kerjain ekstraksi matematisnya manual)
+        preds = np.transpose(preds[0])
+        
         payload = {
             "target_locked": False,
             "error_x": 0.0,
@@ -51,12 +63,49 @@ def main():
             "class": "None"
         }
         
-        if len(results) > 0 and len(results[0].boxes) > 0:
-            box = results[0].boxes[0]
-            # Dummy perhitungan centroid
+        best_conf = 0
+        best_box = None
+        
+        for row in preds:
+            classes_scores = row[4:]
+            _, _, _, max_indx = cv2.minMaxLoc(classes_scores)
+            class_id = max_indx[1]
+            score = classes_scores[class_id]
+            
+            if score > config.CONFIDENCE_THRESHOLD and score > best_conf:
+                best_conf = score
+                # row[0:4] adalah cx, cy, w, h dalam skala 640x640
+                best_box = row[0:4]
+        
+        # Jika ketemu target
+        if best_box is not None:
+            cx, cy, w, h = best_box
+            
+            # Skala balik ke resolusi asli (Misal kamera 640x480)
+            x_scale = config.CAMERA_WIDTH / 640.0
+            y_scale = config.CAMERA_HEIGHT / 640.0
+            
+            real_cx = cx * x_scale
+            real_cy = cy * y_scale
+            real_w = w * x_scale
+            real_h = h * y_scale
+            
             payload["target_locked"] = True
-            payload["class"] = model.names[int(box.cls[0])]
-            payload["area"] = float(box.xywh[0][2] * box.xywh[0][3])
+            payload["area"] = float(real_w * real_h)
+            
+            # Hitung Error dari titik tengah layar
+            center_x = config.CAMERA_WIDTH / 2
+            center_y = config.CAMERA_HEIGHT / 2
+            payload["error_x"] = float(real_cx - center_x)
+            payload["error_y"] = float(center_y - real_cy)
+            
+            # Gambar kotak di layar buat ngecek (Debug)
+            x1 = int(real_cx - real_w/2)
+            y1 = int(real_cy - real_h/2)
+            x2 = int(real_cx + real_w/2)
+            y2 = int(real_cy + real_h/2)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
 
         # Kirim data ke Autopilot via UDP (Port 5005)
         udp_socket.sendto(json.dumps(payload).encode('utf-8'), ('127.0.0.1', 5005))
