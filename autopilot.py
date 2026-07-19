@@ -1,9 +1,6 @@
 import asyncio
-import json
-import socket
-import config
 from pymavlink import mavutil
-from comms import connect_drone
+from comms import connect_drone, global_state, mavlink_router_task, start_udp_server
 from states import State_Takeoff, State_SearchTarget
 
 # =====================================================================
@@ -14,7 +11,6 @@ class Autopilot:
     def __init__(self):
         self.master = None
         self.state_phase = "IDLE"
-        self.global_vision_state = {}
         self.timeout_counter = 0
 
     async def setup(self):
@@ -26,60 +22,69 @@ class Autopilot:
             "SEARCH_TARGET": State_SearchTarget(self)
         }
 
-    async def udp_listener(self):
-        udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udp_socket.bind(('127.0.0.1', 5005))
-        udp_socket.setblocking(False)
-        
-        loop = asyncio.get_event_loop()
-        print("[AUTOPILOT] UDP Listener berjalan di Port 5005...")
-        
-        while True:
-            try:
-                data, _ = await loop.sock_recvfrom(udp_socket, 1024)
-                payload = json.loads(data.decode('utf-8'))
-                self.global_vision_state.update(payload)
-            except Exception:
-                pass
-            await asyncio.sleep(0.01)
-
     async def run_state_machine(self):
         print("[AUTOPILOT] State Machine Engine DIMULAI (10Hz)...")
-        # Tunggu mode GUIDED masuk
         print("[AUTOPILOT] Pindah ke Mode GUIDED untuk memulai!")
+        
         while True:
-            msg = self.master.recv_match(type='HEARTBEAT', blocking=False)
-            if msg:
-                mode = mavutil.mode_string_v10(msg)
-                if mode == 'GUIDED':
-                    self.state_phase = "SEARCH_TARGET" # Atau Takeoff
-                    print("[AUTOPILOT] GUIDED AKTIF! Misi Dimulai!")
-                    break
-            await asyncio.sleep(0.5)
-
-        while True:
-            # Operational Failsafe
+            # Pengecekan Failsafe Buta
             if self.timeout_counter > 300: 
                 print("[EMERGENCY] AI BUTA / TIMEOUT! RETURN TO LAUNCH!")
                 self.master.set_mode_rtl()
                 self.state_phase = "IDLE"
                 self.timeout_counter = 0
 
-            # Eksekusi State
-            current_state = self.states.get(self.state_phase)
-            if current_state:
-                await current_state.execute()
-                self.timeout_counter += 1
+            # Gunakan global_state.mode yang dibaca oleh comms.py (CH5 biasanya mengatur ini di ArduPilot)
+            if global_state.mode == 'GUIDED':
+                
+                # =============================================================
+                # FITUR RESUME / RESET WAYPOINT DARI KNOB REMOTE (CH7)
+                # =============================================================
+                if global_state.ch7_knob < 1300 and self.state_phase != "TAKEOFF":
+                    if self.state_phase != "WP1":
+                        print("[AUTOPILOT] KNOB KIRI: Reset misi ke WP1!")
+                        self.state_phase = "WP1"
+                        
+                elif 1400 < global_state.ch7_knob < 1600 and self.state_phase != "TAKEOFF":
+                    if self.state_phase != "WP2":
+                        print("[AUTOPILOT] KNOB TENGAH: Reset misi ke WP2!")
+                        self.state_phase = "WP2"
+                        
+                elif global_state.ch7_knob > 1700 and self.state_phase != "TAKEOFF":
+                    if self.state_phase != "WP3":
+                        print("[AUTOPILOT] KNOB KANAN: Reset misi ke WP3!")
+                        self.state_phase = "WP3"
+                # =============================================================
+
+                if self.state_phase == "IDLE":
+                    self.state_phase = "SEARCH_TARGET"
+                    print("[AUTOPILOT] GUIDED AKTIF! Misi Dimulai!")
+
+                current_state = self.states.get(self.state_phase)
+                if current_state:
+                    await current_state.execute()
+                    self.timeout_counter += 1
+            else:
+                if self.state_phase != "IDLE":
+                    print("[AUTOPILOT] Mode bukan GUIDED. AI Pause...")
+                    self.state_phase = "IDLE"
                     
             await asyncio.sleep(0.1)
 
 async def main():
     agent = Autopilot()
     await agent.setup()
-    await asyncio.gather(
-        agent.udp_listener(),
-        agent.run_state_machine()
-    )
+    
+    # Start UDP Server dari comms.py
+    udp_transport = await start_udp_server()
+    
+    try:
+        await asyncio.gather(
+            mavlink_router_task(agent.master),
+            agent.run_state_machine()
+        )
+    finally:
+        udp_transport.close()
 
 if __name__ == "__main__":
     asyncio.run(main())

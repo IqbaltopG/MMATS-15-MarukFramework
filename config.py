@@ -1,7 +1,7 @@
 # config.py — MASTER CONFIGURATION (Real Hardware)
 
 # === ENVIRONMENT ===
-IS_SIMULATION = False
+IS_SIMULATION = True
 
 # === FC CONNECTION (DekeFPV) ===
 FC_CONNECTION = '/dev/ttyAMA0'  # UART port pada Jetson Nano (contoh)
@@ -21,11 +21,13 @@ MODEL_PATH = 'Krti_model.pt'
 CONFIDENCE_THRESHOLD = 0.55
 
 # === TUNING KINEMATICS (Proportional Navigation) ===
-# Nilai-nilai ini mungkin harus dikecilkan/disesuaikan saat uji terbang asli
+# Nilai-nilai ini adalah "Position Sizing" untuk membatasi Throttle < 60% (Anti-Brownout)
 KP_YAW = 0.05
 KP_UP = 0.05
-FWD_MAX_SPEED = 1.0     # meter per second
-STRAFE_MAX_SPEED = 0.25 # meter per second
+FWD_MAX_SPEED = 1.2     # Jangan lebih dari 2.0 m/s biar FC ga nunduk ekstrem
+STRAFE_MAX_SPEED = 0.25 # Pelan aja buat ngepasin bolongan gawang
+UP_MAX_SPEED = 0.5      # [PENTING] Clamp power vertikal (Motor nyedot Ampere terbesar pas naik!)
+DOWN_MAX_SPEED = -0.3   # Turun pelan biar ga kehilangan daya angkat (Vortex Ring State)
 
 # === STATE MACHINE TIMEOUTS ===
 # Di Gazebo (RTF lambat), timeout 100 ticks = 10 detik.
