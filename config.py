@@ -1,10 +1,10 @@
 # config.py — MASTER CONFIGURATION (Real Hardware)
 
 # === ENVIRONMENT ===
-IS_SIMULATION = True
+IS_SIMULATION = False
 
 # === FC CONNECTION (DekeFPV) ===
-FC_CONNECTION = '/dev/ttyAMA0'  # UART port pada Jetson Nano (contoh)
+FC_CONNECTION = '/dev/ttyTHS1'  # UART port pada Jetson Nano
 FC_BAUD = 921600                # Baudrate tinggi untuk komunikasi MAVLink
 
 # === CAMERA (Vision Daemon) ===

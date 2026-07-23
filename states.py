@@ -28,25 +28,75 @@ class State_Takeoff(StateBase):
 
 class State_SearchTarget(StateBase):
     """
-    Contoh State 2: Mencari target menggunakan data dari Vision Daemon.
+    Contoh Integrasi Vision AI -> Think Layer -> RC Override.
+    Menyelaraskan kamera ke gawang lalu melakukan Blind Punch.
     """
+    def __init__(self, autopilot):
+        super().__init__(autopilot)
+        self.is_blind_punching = False
+        self.punch_ticks = 0
+
     async def execute(self):
+        # 1. BLIND PUNCH PHASE (Dead Reckoning)
+        if self.is_blind_punching:
+            print(f"[STATE] 🚀 BLIND PUNCHING... Tick: {self.punch_ticks}")
+            
+            # Dorong tuas maju 40%. Kunci kemudi Kiri/Kanan.
+            await self.flight.send_rc_override(self.master, forward_cmd=0.4, right_cmd=0.0, yaw_cmd=0.0)
+            
+            self.punch_ticks += 1
+            
+            # Asumsi: 40% Pitch = 1 m/s. Butuh tembus 2m lorong + 1m ekstra ruang = 3 detik = 30 Ticks
+            if self.punch_ticks > 30: 
+                print("[STATE] 🛑 SELESAI PUNCH! NGEREM!")
+                self.is_blind_punching = False
+                self.punch_ticks = 0
+                await self.flight.send_rc_override(self.master, forward_cmd=0.0) # Rem (stik tengah)
+                self.autopilot.state_phase = "WP2" # Lanjut misi berikutnya
+            
+            return # Keluar fungsi agar tidak membaca YOLO saat lagi punch buta
+
+        # 2. VISION CENTERING PHASE (Sense -> Think -> Act)
         if global_state.target_locked:
-            print(f"[STATE] Target {global_state.target_class} ditemukan! Mulai Centering...")
+            print(f"[STATE] 🎯 Target {global_state.target_class} ditemukan! Area: {global_state.area}")
             
-            # Hitung Kinematika Proporsional
-            yaw_cmd = global_state.error_x * config.KP_YAW
-            yaw_cmd = max(-30.0, min(30.0, yaw_cmd)) # Batasi kecepatan putar
+            # P-Controller: Ubah Pixel Error YOLO menjadi persentase gerakan tuas RC (-1.0 s/d 1.0)
+            # Asumsi error maksimal layar adalah 320 piksel. 
+            # Kp (Proportional Gain) misalnya 0.002. Jadi error 100 piksel = dorong stik 20% (0.2).
+            yaw_cmd = global_state.error_x * 0.002 
             
-            await self.flight.send_body_velocity(
+            # Clamp kemudi maksimal 30% biar nggak kepleset
+            yaw_cmd = max(-0.3, min(0.3, yaw_cmd)) 
+            
+            # THE TRIPWIRE (Kalkulasi Luas Gawang)
+            # Jika Area gawang > 120,000 (Gawang udah di depan hidung), DAN hidung udah lurus
+            if global_state.area > 120000 and abs(global_state.error_x) < 30:
+                print("[STATE] 🚨 TRIPWIRE TERSENTUH! MEMULAI BLIND PUNCH!")
+                self.is_blind_punching = True
+                return
+
+            # Kalau belum menyentuh Tripwire, perlahan maju sambil terus luruskan hidung (Centering)
+            await self.flight.send_rc_override(
                 self.master, 
-                forward_m_s=config.FWD_MAX_SPEED, 
-                right_m_s=0.0, 
-                down_m_s=0.0, 
-                yaw_deg_s=yaw_cmd
+                forward_cmd=0.2, # Maju santai 20%
+                right_cmd=0.0, 
+                up_cmd=0.0, 
+                yaw_cmd=yaw_cmd  # Belok kiri/kanan sesuai posisi YOLO
             )
+            
         else:
-            print("[STATE] Target hilang. Radar Sweep...")
-            # Sweep sinusoidal buat nyari target
-            sweep_yaw = math.sin(self.autopilot.timeout_counter * 0.1) * 20.0
-            await self.flight.send_body_velocity(self.master, forward_m_s=0.2, right_m_s=0.0, down_m_s=0.0, yaw_deg_s=sweep_yaw)
+            print("[STATE] ❓ Target hilang. Sweep Radar (Memory Buffer)...")
+            
+            # Implementasi "Anti-Tawaf" (Low-Pass Filter) dilakukan di vision_daemon.py
+            # Jika masuk ke sini, artinya YOLO sudah buta lebih dari 5 frame.
+            # Lakukan sweep mencari target (Putar Yaw Kiri Kanan santai 15%)
+            sweep_yaw = math.sin(self.autopilot.timeout_counter * 0.1) * 0.15
+            
+            # Jangan maju kalau buta, cukup diam di tempat sambil nengok
+            await self.flight.send_rc_override(
+                self.master, 
+                forward_cmd=0.0, 
+                right_cmd=0.0, 
+                up_cmd=0.0, 
+                yaw_cmd=sweep_yaw
+            )
