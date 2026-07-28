@@ -34,40 +34,39 @@ class Autopilot:
                 self.state_phase = "IDLE"
                 self.timeout_counter = 0
 
-            # Gunakan global_state.mode yang dibaca oleh comms.py (CH5 biasanya mengatur ini di ArduPilot)
-            if global_state.mode == 'GUIDED':
-                
-                # =============================================================
-                # FITUR RESUME / RESET WAYPOINT DARI KNOB REMOTE (CH7)
-                # =============================================================
-                if global_state.ch7_knob < 1300 and self.state_phase != "TAKEOFF":
-                    if self.state_phase != "WP1":
-                        print("[AUTOPILOT] KNOB KIRI: Reset misi ke WP1!")
-                        self.state_phase = "WP1"
-                        
-                elif 1400 < global_state.ch7_knob < 1600 and self.state_phase != "TAKEOFF":
-                    if self.state_phase != "WP2":
-                        print("[AUTOPILOT] KNOB TENGAH: Reset misi ke WP2!")
-                        self.state_phase = "WP2"
-                        
-                elif global_state.ch7_knob > 1700 and self.state_phase != "TAKEOFF":
-                    if self.state_phase != "WP3":
-                        print("[AUTOPILOT] KNOB KANAN: Reset misi ke WP3!")
-                        self.state_phase = "WP3"
-                # =============================================================
-
-                if self.state_phase == "IDLE":
-                    self.state_phase = "SEARCH_TARGET"
-                    print("[AUTOPILOT] GUIDED AKTIF! Misi Dimulai!")
-
-                current_state = self.states.get(self.state_phase)
-                if current_state:
-                    await current_state.execute()
-                    self.timeout_counter += 1
-            else:
+            # 1. HACK CYBORG SWITCH: BACA RAW PWM CH5 (SAKLAR AI)
+            if global_state.ch5_switch < 1300:
                 if self.state_phase != "IDLE":
-                    print("[AUTOPILOT] Mode bukan GUIDED. AI Pause...")
+                    print("[AUTOPILOT] AI Paused! Saklar CH5 di bawah (Kendali Manual).")
                     self.state_phase = "IDLE"
+                
+                # 2. HACK DFA AMNESIA: RESET WAYPOINT DARI KNOB CH7 SAAT PAUSE
+                pwm_ch7 = global_state.ch7_knob
+                if pwm_ch7 < 1300 and self.state_phase != "TAKEOFF":
+                    if self.state_phase != "WP1":
+                        print("[AUTOPILOT] 🔄 KNOB KIRI: Memori AI digeser ke WP1!")
+                        self.state_phase = "WP1"
+                elif 1400 < pwm_ch7 < 1600 and self.state_phase != "TAKEOFF":
+                    if self.state_phase != "WP2":
+                        print("[AUTOPILOT] 🔄 KNOB TENGAH: Memori AI digeser ke WP2!")
+                        self.state_phase = "WP2"
+                elif pwm_ch7 > 1700 and self.state_phase != "TAKEOFF":
+                    if self.state_phase != "WP3":
+                        print("[AUTOPILOT] 🔄 KNOB KANAN: Memori AI digeser ke WP3!")
+                        self.state_phase = "WP3"
+                
+                await asyncio.sleep(0.1)
+                continue # Skip logic state, diam di tempat
+            
+            # Jika CH5 > 1700 (AI Active / Saklar Atas)
+            if self.state_phase == "IDLE":
+                self.state_phase = "SEARCH_TARGET"
+                print("[AUTOPILOT] 🤖 CYBORG SWITCH AKTIF! AI Mengambil Alih!")
+
+            current_state = self.states.get(self.state_phase)
+            if current_state:
+                await current_state.execute()
+                self.timeout_counter += 1
                     
             await asyncio.sleep(0.1)
 

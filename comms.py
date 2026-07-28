@@ -16,6 +16,7 @@ class GlobalState:
         self.lidar_right = 0.0
         self.altitude = 0.0
         self.ch7_knob = 1500
+        self.ch5_switch = 1000
         
         # Vision State (Dari UDP YOLO)
         self.target_locked = False
@@ -50,6 +51,7 @@ async def mavlink_router_task(master):
                 global_state.mode = mavutil.mode_string_v10(msg)
             elif mtype == 'RC_CHANNELS':
                 global_state.ch7_knob = msg.chan7_raw
+                global_state.ch5_switch = msg.chan5_raw
             elif mtype == 'DISTANCE_SENSOR':
                 if msg.id == 1:
                     global_state.lidar_left = msg.current_distance / 100.0
