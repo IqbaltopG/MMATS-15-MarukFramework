@@ -99,7 +99,7 @@ class UDPReceiverProtocol(asyncio.DatagramProtocol):
             pass
 
 async def start_udp_server(ip="127.0.0.1", port=5005):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     print(f"[COMMS] UDP Vision Receiver Berjalan di Port {port}...")
     transport, protocol = await loop.create_datagram_endpoint(
         lambda: UDPReceiverProtocol(),
