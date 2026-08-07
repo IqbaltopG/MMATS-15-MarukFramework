@@ -5,7 +5,7 @@ IS_SIMULATION = False
 
 # === FC CONNECTION (DekeFPV) ===
 FC_CONNECTION = '/dev/ttyTHS1'  # UART port pada Jetson Nano
-FC_BAUD = 921600                # Baudrate tinggi untuk komunikasi MAVLink
+FC_BAUD = 115200                # Baudrate standar MAVLink INAV
 
 # === CAMERA (Vision Daemon) ===
 # Ganti dengan 0 untuk USB Webcam atau '/dev/video0'
