@@ -44,7 +44,8 @@ class Autopilot:
                     )
                     await asyncio.sleep(0.1)
             
-            rc_task = asyncio.create_task(spam_rc())
+            # Python 3.6 kompatibel pengganti asyncio.create_task
+            rc_task = asyncio.ensure_future(spam_rc())
 
             # 2. Force Arming & Takeoff
             self.master.mav.command_long_send(
@@ -149,4 +150,6 @@ async def main():
         udp_transport.close()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Python 3.6 kompatibel pengganti asyncio.run()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
