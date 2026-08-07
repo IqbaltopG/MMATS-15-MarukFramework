@@ -89,29 +89,29 @@ class Autopilot:
         while True:
             # BYPASS UNTUK SIMULATOR (Tidak perlu remot fisik)
             if IS_SIMULATION:
-                state.ch5_switch = 2000
+                state.ai_switch = 2000
 
-            # 1. HACK CYBORG SWITCH: BACA RAW PWM CH5 (SAKLAR AI)
-            if state.ch5_switch < 1300:
+            # 1. HACK CYBORG SWITCH: BACA RAW PWM SAKLAR AI (CH6)
+            if state.ai_switch < 1300:
                 if self.ctx.state_phase != "IDLE":
-                    print("[AUTOPILOT] AI Paused! Saklar CH5 di bawah (Kendali Manual).")
+                    print("[AUTOPILOT] AI Paused! Saklar AI di bawah (Kendali Manual).")
                     self.ctx.state_phase = "IDLE"
                     await flight.release_rc_override(self.master)
                 
                 await asyncio.sleep(0.1)
                 continue # Skip logic state, diam di tempat (Pilot Manual)
             
-            # 2. JIKA CH5 > 1700 (AI ACTIVE) TAPI STATE MASIH IDLE (Baru di-resume)
+            # 2. JIKA SAKLAR AI > 1700 (AI ACTIVE) TAPI STATE MASIH IDLE (Baru di-resume)
             if self.ctx.state_phase == "IDLE":
-                # HACK DFA AMNESIA: TENTUKAN STATE RESUME BERDASARKAN KNOB CH7
-                pwm_ch7 = state.ch7_knob
-                if pwm_ch7 < 1300:
+                # HACK DFA AMNESIA: TENTUKAN STATE RESUME BERDASARKAN KNOB (CH8)
+                pwm_knob = state.memory_knob
+                if pwm_knob < 1300:
                     self.ctx.state_phase = "BLIND_PUNCH_TAKEOFF"
                     print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KIRI -> Mulai dari BLIND_PUNCH!")
-                elif 1400 < pwm_ch7 < 1600:
+                elif 1400 < pwm_knob < 1600:
                     self.ctx.state_phase = "CENTERING_GATE_1"
                     print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB TENGAH -> Mulai dari CARI GAWANG!")
-                elif pwm_ch7 > 1700:
+                elif pwm_knob > 1700:
                     self.ctx.state_phase = "FIND_ARUCO_1"
                     print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KANAN -> Mulai dari CARI ARUCO!")
                 else:

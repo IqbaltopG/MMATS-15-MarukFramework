@@ -26,8 +26,8 @@ class DroneState:
         
         # MMATS Hardware Failsafe / Modes
         self.mode = "UNKNOWN"
-        self.ch7_knob = 1500
-        self.ch5_switch = 1000
+        self.memory_knob = 1500  # CH8 (VRA)
+        self.ai_switch = 1000    # CH6 (Switch B)
 
 # Exporting exactly what states.py expects
 state = DroneState()
@@ -56,8 +56,10 @@ async def mavlink_router_task(master):
             if mtype == 'HEARTBEAT':
                 state.mode = mavutil.mode_string_v10(msg)
             elif mtype == 'RC_CHANNELS':
-                state.ch7_knob = msg.chan7_raw
-                state.ch5_switch = msg.chan5_raw
+                self.memory_knob = getattr(msg, 'chan8_raw', 1500)
+                self.ai_switch = getattr(msg, 'chan6_raw', 1000)
+                state.memory_knob = self.memory_knob
+                state.ai_switch = self.ai_switch
             elif mtype == 'DISTANCE_SENSOR':
                 if msg.id == 1:
                     state.lidar_left = msg.current_distance / 100.0
