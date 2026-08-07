@@ -98,26 +98,25 @@ class Autopilot:
                     self.ctx.state_phase = "IDLE"
                     await flight.release_rc_override(self.master)
                 
-                # 2. HACK DFA AMNESIA: RESET WAYPOINT DARI KNOB CH7 SAAT PAUSE
-                pwm_ch7 = state.ch7_knob
-                if pwm_ch7 < 1300 and self.ctx.state_phase != "BLIND_PUNCH_TAKEOFF":
-                    print("[AUTOPILOT] 🔄 KNOB KIRI: Memori AI digeser ke BLIND_PUNCH_TAKEOFF!")
-                    self.ctx.state_phase = "BLIND_PUNCH_TAKEOFF"
-                elif 1400 < pwm_ch7 < 1600 and self.ctx.state_phase != "CENTERING_GATE_1":
-                    print("[AUTOPILOT] 🔄 KNOB TENGAH: Memori AI digeser ke CENTERING_GATE_1!")
-                    self.ctx.state_phase = "CENTERING_GATE_1"
-                elif pwm_ch7 > 1700 and self.ctx.state_phase != "FIND_ARUCO_1":
-                    print("[AUTOPILOT] 🔄 KNOB KANAN: Memori AI digeser ke FIND_ARUCO_1!")
-                    self.ctx.state_phase = "FIND_ARUCO_1"
-                
                 await asyncio.sleep(0.1)
-                continue # Skip logic state, diam di tempat
+                continue # Skip logic state, diam di tempat (Pilot Manual)
             
-            # Jika CH5 > 1700 (AI Active / Saklar Atas)
+            # 2. JIKA CH5 > 1700 (AI ACTIVE) TAPI STATE MASIH IDLE (Baru di-resume)
             if self.ctx.state_phase == "IDLE":
-                # Fallback to a default if switched on without setting knob
-                self.ctx.state_phase = "BLIND_PUNCH_TAKEOFF" 
-                print("[AUTOPILOT] 🤖 CYBORG SWITCH AKTIF! AI Mengambil Alih!")
+                # HACK DFA AMNESIA: TENTUKAN STATE RESUME BERDASARKAN KNOB CH7
+                pwm_ch7 = state.ch7_knob
+                if pwm_ch7 < 1300:
+                    self.ctx.state_phase = "BLIND_PUNCH_TAKEOFF"
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KIRI -> Mulai dari BLIND_PUNCH!")
+                elif 1400 < pwm_ch7 < 1600:
+                    self.ctx.state_phase = "CENTERING_GATE_1"
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB TENGAH -> Mulai dari CARI GAWANG!")
+                elif pwm_ch7 > 1700:
+                    self.ctx.state_phase = "FIND_ARUCO_1"
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KANAN -> Mulai dari CARI ARUCO!")
+                else:
+                    self.ctx.state_phase = "BLIND_PUNCH_TAKEOFF" # Fallback aman
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: Default -> BLIND_PUNCH!")
 
             current_state = STATE_REGISTRY.get(self.ctx.state_phase)
             if current_state:
