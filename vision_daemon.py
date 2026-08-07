@@ -16,9 +16,11 @@ UDP_IP = "127.0.0.1"
 MODEL_PATH = "/home/ambatron/DRONE_INAV/Krti_model.pt" # Menggunakan .pt dulu
 CONFIDENCE_THRESHOLD = 0.25
 
-# GStreamer Pipeline
-FRONT_CAM_GST = 'udpsrc port=5600 ! application/x-rtp, payload=96 ! rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! video/x-raw, format=BGR ! appsink sync=false drop=true max-buffers=1'
-DOWN_CAM_GST  = 'udpsrc port=5601 ! application/x-rtp, payload=96 ! rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! video/x-raw, format=BGR ! appsink sync=false drop=true max-buffers=1'
+import config
+
+# GStreamer Pipeline dihapus karena kita pakai USB Webcam
+FRONT_CAM = config.CAMERA_FRONT
+DOWN_CAM  = config.CAMERA_DOWN
 
 # UDP CONFIG
 UDP_IP = "127.0.0.1"
@@ -28,7 +30,7 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 def open_camera_with_timeout(pipeline, timeout_sec=60):
     result = [None]
     def _open():
-        cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+        cap = cv2.VideoCapture(pipeline)
         if not cap.isOpened():
             return
         start_t = time.time()
@@ -51,11 +53,11 @@ def start_vision_daemon():
     model = YOLO(MODEL_PATH)
     model.to('cpu')  # Force CPU, skip CUDA drama!
 
-    print("[VISION] Membuka kamera front (port 5600 langsung)... max 60 detik")
-    cap_front = open_camera_with_timeout(FRONT_CAM_GST, timeout_sec=60)
+    print(f"[VISION] Membuka kamera front (Index {FRONT_CAM})... max 60 detik")
+    cap_front = open_camera_with_timeout(FRONT_CAM, timeout_sec=60)
     
-    print("[VISION] Membuka kamera down (port 5601 langsung)... max 60 detik")
-    cap_down = open_camera_with_timeout(DOWN_CAM_GST, timeout_sec=60)
+    print(f"[VISION] Membuka kamera down (Index {DOWN_CAM})... max 60 detik")
+    cap_down = open_camera_with_timeout(DOWN_CAM, timeout_sec=60)
 
 
     if cap_front is None:
