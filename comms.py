@@ -56,10 +56,8 @@ async def mavlink_router_task(master):
             if mtype == 'HEARTBEAT':
                 state.mode = mavutil.mode_string_v10(msg)
             elif mtype == 'RC_CHANNELS':
-                self.memory_knob = getattr(msg, 'chan8_raw', 1500)
-                self.ai_switch = getattr(msg, 'chan6_raw', 1000)
-                state.memory_knob = self.memory_knob
-                state.ai_switch = self.ai_switch
+                state.memory_knob = getattr(msg, 'chan8_raw', 1500)
+                state.ai_switch = getattr(msg, 'chan6_raw', 1000)
             elif mtype == 'DISTANCE_SENSOR':
                 if msg.id == 1:
                     state.lidar_left = msg.current_distance / 100.0

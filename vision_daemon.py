@@ -12,7 +12,6 @@ from ultralytics import YOLO
 import supervision as sv
 
 # CONFIGURATION
-UDP_IP = "127.0.0.1"
 MODEL_PATH = "yolov8n.pt" # Pakai model bawaan YOLO (COCO) sementara buat Ghost Flight
 CONFIDENCE_THRESHOLD = 0.25
 
@@ -177,9 +176,8 @@ def start_vision_daemon():
     except KeyboardInterrupt:
         print("\n[VISION] Daemon dihentikan.")
     finally:
-        cap_front.release()
-        if cap_down is not None:
-            cap_down.release()
+        if cap_front is not None: cap_front.release()
+        if cap_down is not None: cap_down.release()
         sock.close()
 
 if __name__ == "__main__":

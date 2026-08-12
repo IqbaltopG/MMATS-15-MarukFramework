@@ -64,6 +64,8 @@ def main():
     frame_count = 0
     saved_count = 0
     start_time = time.time()
+    last_save_time = time.time()
+    SAVE_INTERVAL = 1.0 / TARGET_SAVE_FPS  # 0.2 detik per frame
 
     while is_recording:
         ret_f, frame_f = False, None
@@ -77,8 +79,10 @@ def main():
                 
         frame_count += 1
         
-        # Simpan gambar sesuai target FPS (Misal 5 foto per detik)
-        if frame_count % frame_interval == 0:
+        # Simpan gambar berdasarkan REAL-TIME bukan frame count (Loop bisa jalan >1000fps!)
+        now = time.time()
+        if now - last_save_time >= SAVE_INTERVAL:
+            last_save_time = now
             if ret_f and frame_f is not None:
                 cv2.imwrite(f"{save_dir}/front_{saved_count}.jpg", frame_f)
             if ret_d and frame_d is not None:
@@ -87,6 +91,8 @@ def main():
             saved_count += 1
             elapsed = int(time.time() - start_time)
             print(f"[REC] Waktu berjalan: {elapsed}s | Foto tersimpan: {saved_count} pasang", end='\r')
+        
+        time.sleep(0.01)  # Anti CPU 100%, yield ke OS
 
     # Bersihkan memori
     print("\n[REC] Menyelesaikan proses rekaman...")
