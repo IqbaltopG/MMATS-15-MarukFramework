@@ -46,52 +46,50 @@ def main():
     # Siapkan folder dataset jika belum ada
     os.makedirs("dataset", exist_ok=True)
     
-    # Bikin nama file unik berdasarkan waktu
+    # Bikin nama folder unik berdasarkan waktu
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    out_front = None
-    out_down = None
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    save_dir = f"dataset/run_{timestamp}"
+    os.makedirs(save_dir, exist_ok=True)
     
-    if cap_front.isOpened():
-        out_front = cv2.VideoWriter(f"dataset/FRONT_POV_{timestamp}.mp4", fourcc, config.CAMERA_FPS, (config.CAMERA_WIDTH, config.CAMERA_HEIGHT))
-    if cap_down.isOpened():
-        out_down = cv2.VideoWriter(f"dataset/DOWN_POV_{timestamp}.mp4", fourcc, config.CAMERA_FPS, (config.CAMERA_WIDTH, config.CAMERA_HEIGHT))
-
     print(f"[REC] =========================================")
-    print(f"[REC] MEREKAM VIDEO KE FOLDER 'dataset/'")
+    print(f"[REC] MEREKAM GAMBAR KE FOLDER: {save_dir}")
     print(f"[REC] Kamera Aktif: {'DEPAN ' if cap_front.isOpened() else ''}{'BAWAH' if cap_down.isOpened() else ''}")
-    print(f"[REC] Resolusi: {config.CAMERA_WIDTH}x{config.CAMERA_HEIGHT} @ {config.CAMERA_FPS} FPS")
-    print(f"[REC] TEKAN 'Ctrl+C' DI TERMINAL UNTUK BERHENTI!")
+    print(f"[REC] Resolusi: {config.CAMERA_WIDTH}x{config.CAMERA_HEIGHT} @ 1 FPS")
     print(f"[REC] =========================================")
 
     frame_count = 0
+    saved_count = 0
     start_time = time.time()
 
     while is_recording:
+        ret_f, frame_f = False, None
+        ret_d, frame_d = False, None
+        
         if cap_front.isOpened():
             ret_f, frame_f = cap_front.read()
-            if ret_f and out_front:
-                out_front.write(frame_f)
                 
         if cap_down.isOpened():
             ret_d, frame_d = cap_down.read()
-            if ret_d and out_down:
-                out_down.write(frame_d)
                 
         frame_count += 1
         
-        # Cetak status setiap 30 frame (~1 detik)
+        # Simpan 1 gambar setiap 1 detik (Asumsi kamera berjalan sesuai FPS config)
+        # Atau bisa pakai timer waktu nyata biar lebih akurat
         if frame_count % config.CAMERA_FPS == 0:
+            if ret_f and frame_f is not None:
+                cv2.imwrite(f"{save_dir}/front_{saved_count}.jpg", frame_f)
+            if ret_d and frame_d is not None:
+                cv2.imwrite(f"{save_dir}/down_{saved_count}.jpg", frame_d)
+                
+            saved_count += 1
             elapsed = int(time.time() - start_time)
-            print(f"[REC] Durasi rekam: {elapsed} detik | Frames: {frame_count}", end='\r')
+            print(f"[REC] Waktu berjalan: {elapsed}s | Foto tersimpan: {saved_count} pasang", end='\r')
 
-    # Bersihkan memori dan tutup file
+    # Bersihkan memori
     print("\n[REC] Menyelesaikan proses rekaman...")
     if cap_front.isOpened(): cap_front.release()
     if cap_down.isOpened(): cap_down.release()
-    if out_front: out_front.release()
-    if out_down: out_down.release()
-    print(f"[REC] ✅ Video berhasil disimpan di folder 'dataset/'")
+    print(f"[REC] ✅ {saved_count} pasang foto berhasil disimpan di folder '{save_dir}'")
 
 if __name__ == "__main__":
     main()
