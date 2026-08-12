@@ -53,11 +53,11 @@ def start_vision_daemon():
     model = YOLO(MODEL_PATH)
     model.to('cpu')  # Force CPU, skip CUDA drama!
 
-    print(f"[VISION] Membuka kamera front (Index {FRONT_CAM})... max 60 detik")
-    cap_front = open_camera_with_timeout(FRONT_CAM, timeout_sec=60)
+    print(f"[VISION] Membuka kamera front (Index {FRONT_CAM})... max 5 detik")
+    cap_front = open_camera_with_timeout(FRONT_CAM, timeout_sec=5)
     
-    print(f"[VISION] Membuka kamera down (Index {DOWN_CAM})... max 60 detik")
-    cap_down = open_camera_with_timeout(DOWN_CAM, timeout_sec=60)
+    print(f"[VISION] Membuka kamera down (Index {DOWN_CAM})... max 5 detik")
+    cap_down = open_camera_with_timeout(DOWN_CAM, timeout_sec=5)
 
 
     if cap_front is None or cap_down is None:
