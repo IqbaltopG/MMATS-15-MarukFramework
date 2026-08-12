@@ -60,12 +60,17 @@ def start_vision_daemon():
     cap_down = open_camera_with_timeout(DOWN_CAM, timeout_sec=60)
 
 
-    if cap_front is None:
-        print("[VISION] FATAL: Kamera FRONT gagal! Pastiin ArduPilot + Gazebo udah jalan.")
-        sys.exit(1)
-    if cap_down is None:
-        print("[VISION] FATAL: Kamera DOWN gagal! Pastiin ArduPilot + Gazebo udah jalan.")
-        sys.exit(1)
+    if cap_front is None or cap_down is None:
+        print("[VISION] ⚠️ WARNING: Kamera fisik tidak terdeteksi (Tidak dicolok)!")
+        print("[VISION] 🤖 Masuk ke DUMMY MODE. Mengirim sinyal 'LOST' ke Autopilot (Buat ngetes MAVLink).")
+        try:
+            while True:
+                dummy_data = {"status": "LOST", "class": "none", "error_x": 0, "error_y": 0, "area": 0, "camera": "dummy"}
+                sock.sendto(json.dumps(dummy_data).encode('utf-8'), (UDP_IP, UDP_PORT))
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            sock.close()
+            sys.exit(0)
 
     print(f"[VISION] ✅ Mata terbuka! Mengirim data ke {UDP_IP}:{UDP_PORT}...")
 
