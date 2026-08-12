@@ -9,60 +9,52 @@ def clamp(val, min_val, max_val):
 
 async def send_body_velocity(drone, forward_m_s: float = 0.0, right_m_s: float = 0.0, down_m_s: float = 0.0, yaw_deg_s: float = 0.0):
     """
-    [THE SLIPPIN' JIMMY ADAPTER]
-    Menerima input m/s dari states.py (format MAVSDK Offboard),
-    dan men-translate-nya menjadi Joystick Input.
+    [JALUR SULTAN - ARDUPILOT GUIDED MODE]
+    Mengirim perintah kecepatan (Velocity) langsung ke ArduPilot dalam satuan m/s.
+    Drone WAJIB berada dalam mode GUIDED!
     """
     master = drone
     
-    # Tuning kasar m/s ke skala PWM joystick (-1.0 ke 1.0)
-    # Anggap 1 m/s setara 0.5 throw joystick
-    forward_cmd = forward_m_s / 2.0  
-    right_cmd = right_m_s / 2.0      
-    up_cmd = -down_m_s / 1.0        # down_m_s positif = turun. up_cmd positif = naik.
-    yaw_cmd = yaw_deg_s / 30.0      
+    # Konversi Yaw Rate dari derajat/detik ke radian/detik
+    yaw_rate_rad = math.radians(yaw_deg_s)
     
-    max_pwm_delta = 300 # Maksimal 300 PWM (1800 atau 1200) biar aman dari salto
+    # Bitmask: Kita mau pakai Velocity X, Y, Z dan Yaw Rate.
+    # Sisanya (Position, Acceleration, Yaw Angle) di-IGNORE.
+    type_mask = (
+        mavutil.mavlink.POSITION_TARGET_TYPEMASK_X_IGNORE |
+        mavutil.mavlink.POSITION_TARGET_TYPEMASK_Y_IGNORE |
+        mavutil.mavlink.POSITION_TARGET_TYPEMASK_Z_IGNORE |
+        mavutil.mavlink.POSITION_TARGET_TYPEMASK_AX_IGNORE |
+        mavutil.mavlink.POSITION_TARGET_TYPEMASK_AY_IGNORE |
+        mavutil.mavlink.POSITION_TARGET_TYPEMASK_AZ_IGNORE |
+        mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_IGNORE
+    )
     
-    pwm_roll = int(1500 + (right_cmd * max_pwm_delta))
-    pwm_pitch = int(1500 - (forward_cmd * max_pwm_delta)) # Maju (Nunduk) = PWM < 1500
-    pwm_throttle = int(1500 + (up_cmd * max_pwm_delta))
-    pwm_yaw = int(1500 + (yaw_cmd * max_pwm_delta))
-
-    # Clamp untuk safety (Maksimal input 60%)
-    pwm_roll = max(1200, min(1800, pwm_roll))
-    pwm_pitch = max(1200, min(1800, pwm_pitch))
-    pwm_throttle = max(1200, min(1800, pwm_throttle))
-    pwm_yaw = max(1200, min(1800, pwm_yaw))
-
     if config.IS_SIMULATION:
-        # HACK GHAIB: PX4 SITL benci RC_CHANNELS_OVERRIDE (Nolak masuk mode).
-        # Jadi kita konversi PWM INAV lu balik ke bahasa Virtual Joystick PX4 (MANUAL_CONTROL).
-        # Secara fisika, ini 100% SAMA REALISTISNYA dengan PWM! (Murni ngebajak stik, bukan Velocity Offboard)
-        x_pitch = int((1500 - pwm_pitch) / max_pwm_delta * 1000) # PWM 1200 -> 1000 (Full Forward)
-        y_roll = int((pwm_roll - 1500) / max_pwm_delta * 1000)   # PWM 1800 -> 1000 (Full Right)
-        z_throttle = int((pwm_throttle - 1000) / 1000.0 * 1000)  # PWM 1500 -> 500 (Hover)
-        r_yaw = int((pwm_yaw - 1500) / max_pwm_delta * 1000)     # PWM 1800 -> 1000 (Yaw Right)
-        
-        master.mav.manual_control_send(
-            master.target_system,
-            x_pitch, y_roll, z_throttle, r_yaw,
-            0 # buttons
-        )
-    else:
-        master.mav.rc_channels_override_send(
-            master.target_system, master.target_component,
-            pwm_roll, pwm_pitch, pwm_throttle, pwm_yaw,
-            65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535
-        )
+        # Hack untuk SITL kalau perlu, tapi ArduPilot SITL dukung penuh NED
+        # Kita pakai perintah asli aja biar Simulation sama dengan Real Life
+        pass
+
+    # Kirim MAVLink Message 84 (SET_POSITION_TARGET_LOCAL_NED)
+    # Gunakan MAV_FRAME_BODY_NED agar maju/mundur mengacu pada moncong drone
+    master.mav.set_position_target_local_ned_send(
+        0,       # time_boot_ms (not used)
+        master.target_system, master.target_component,
+        mavutil.mavlink.MAV_FRAME_BODY_NED,
+        type_mask,
+        0, 0, 0, # x, y, z positions (di-ignore)
+        forward_m_s, right_m_s, down_m_s, # x, y, z velocity dalam m/s
+        0, 0, 0, # x, y, z acceleration (di-ignore)
+        0, yaw_rate_rad # yaw angle (di-ignore), yaw rate (rad/s)
+    )
 
 async def arm_and_takeoff(drone, altitude_m=1.5):
     """
-    Override dari MAVSDK Takeoff. INAV tidak bisa takeoff otomatis via RC_OVERRIDE tanpa tuning PID yang pas.
-    Biar aman, kita suruh pilot manual takeoff ke hover, baru switch CH5 nyala.
+    Takeoff Manual dibantu AI: Pilot Takeoff ke ketinggian 1.5m,
+    Lalu Pilot pindah ke mode GUIDED, dan cetek CH5!
     """
     print("[FLIGHT] TAKEOFF DIBYPASS (HARDWARE AGNOSTIC)!")
-    print("[FLIGHT] Harap Pilot Takeoff Manual ke 1.5m dan Pindah ke POSHOLD / LOITER.")
+    print("[FLIGHT] Harap Pilot Takeoff Manual ke 1.5m dan Pindah ke GUIDED.")
     print("[FLIGHT] Lalu cetek Switch CH5 untuk memberikan kendali ke AI!")
     await asyncio.sleep(2)
     
