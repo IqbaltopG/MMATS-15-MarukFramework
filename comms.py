@@ -45,6 +45,16 @@ def connect_drone():
         master = mavutil.mavlink_connection(config.FC_CONNECTION, baud=config.FC_BAUD)
 
     master.wait_heartbeat()
+    
+    # [PENTING] Memaksa ArduPilot mengirim data sensor (RC, Posisi, Gyro) secara non-stop 10Hz
+    print("[COMMS] Meminta stream data sensor dari ArduPilot (10Hz)...")
+    master.mav.request_data_stream_send(
+        master.target_system, master.target_component,
+        mavutil.mavlink.MAV_DATA_STREAM_ALL, 
+        10, # 10 Hz
+        1   # Start streaming
+    )
+    
     return master
 
 async def mavlink_router_task(master):
