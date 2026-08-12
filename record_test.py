@@ -51,10 +51,14 @@ def main():
     save_dir = f"dataset/run_{timestamp}"
     os.makedirs(save_dir, exist_ok=True)
     
+    # FPS target buat nyimpen dataset (misal 5 foto per detik biar dapet banyak angle)
+    TARGET_SAVE_FPS = 5
+    frame_interval = max(1, config.CAMERA_FPS // TARGET_SAVE_FPS)
+
     print(f"[REC] =========================================")
     print(f"[REC] MEREKAM GAMBAR KE FOLDER: {save_dir}")
     print(f"[REC] Kamera Aktif: {'DEPAN ' if cap_front.isOpened() else ''}{'BAWAH' if cap_down.isOpened() else ''}")
-    print(f"[REC] Resolusi: {config.CAMERA_WIDTH}x{config.CAMERA_HEIGHT} @ 1 FPS")
+    print(f"[REC] Resolusi: {config.CAMERA_WIDTH}x{config.CAMERA_HEIGHT} @ {TARGET_SAVE_FPS} FPS")
     print(f"[REC] =========================================")
 
     frame_count = 0
@@ -73,9 +77,8 @@ def main():
                 
         frame_count += 1
         
-        # Simpan 1 gambar setiap 1 detik (Asumsi kamera berjalan sesuai FPS config)
-        # Atau bisa pakai timer waktu nyata biar lebih akurat
-        if frame_count % config.CAMERA_FPS == 0:
+        # Simpan gambar sesuai target FPS (Misal 5 foto per detik)
+        if frame_count % frame_interval == 0:
             if ret_f and frame_f is not None:
                 cv2.imwrite(f"{save_dir}/front_{saved_count}.jpg", frame_f)
             if ret_d and frame_d is not None:
