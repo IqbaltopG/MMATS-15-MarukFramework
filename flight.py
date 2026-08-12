@@ -50,13 +50,44 @@ async def send_body_velocity(drone, forward_m_s: float = 0.0, right_m_s: float =
 
 async def arm_and_takeoff(drone, altitude_m=1.5):
     """
-    Takeoff Manual dibantu AI: Pilot Takeoff ke ketinggian 1.5m,
-    Lalu Pilot pindah ke mode GUIDED, dan cetek CH5!
+    [FULL AUTO TAKEOFF - Aturan Baru!]
+    Jetson yang bakal Arming dan Takeoff sendiri!
+    Pastikan Pilot udah buka kunci safety switch (kalau ada) dan minggir!
     """
-    print("[FLIGHT] TAKEOFF DIBYPASS (HARDWARE AGNOSTIC)!")
-    print("[FLIGHT] Harap Pilot Takeoff Manual ke 1.5m dan Pindah ke GUIDED.")
-    print("[FLIGHT] Lalu cetek Switch CH5 untuk memberikan kendali ke AI!")
+    master = drone
+    
+    print("[FLIGHT] [FULL AUTO] Menunggu sinkronisasi Heartbeat...")
+    master.wait_heartbeat()
+    
+    print("[FLIGHT] [FULL AUTO] Pindah ke mode GUIDED...")
+    mode_id = master.mode_mapping()['GUIDED']
+    master.mav.set_mode_send(
+        master.target_system,
+        mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+        mode_id
+    )
+    await asyncio.sleep(1)
+    
+    print("[FLIGHT] [FULL AUTO] ARMING MOTORS! AWAS BALING-BALING!")
+    master.mav.command_long_send(
+        master.target_system, master.target_component,
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        0, 1, 0, 0, 0, 0, 0, 0
+    )
+    
+    # Tunggu motor muter stabil
     await asyncio.sleep(2)
+    
+    print(f"[FLIGHT] [FULL AUTO] TAKEOFF ke ketinggian {altitude_m} meter!")
+    master.mav.command_long_send(
+        master.target_system, master.target_component,
+        mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+        0, 0, 0, 0, 0, 0, 0, altitude_m
+    )
+    
+    print(f"[FLIGHT] Menunggu drone naik ke {altitude_m}m... (Delay 5 detik)")
+    await asyncio.sleep(5)
+    print("[FLIGHT] [FULL AUTO] TAKEOFF SELESAI! MENYERAHKAN KENDALI KE VISION AI!")
     
 async def hover(drone):
     """
