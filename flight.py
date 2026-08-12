@@ -101,3 +101,13 @@ async def release_rc_override(master):
         master.target_system, master.target_component,
         65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535
     )
+async def set_mode_guided(master):
+    """Memaksa ArduPilot masuk ke mode GUIDED untuk mengambil alih kendali"""
+    print("[FLIGHT] 🤖 MENGAMBIL ALIH KENDALI: Pindah ke mode GUIDED!")
+    if 'GUIDED' in master.mode_mapping():
+        mode_id = master.mode_mapping()['GUIDED']
+        master.mav.command_long_send(
+            master.target_system, master.target_component,
+            mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+            mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, mode_id, 0, 0, 0, 0, 0
+        )

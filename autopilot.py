@@ -111,9 +111,11 @@ class Autopilot:
                     self.ctx.state_phase = "BLIND_PUNCH_TAKEOFF"
                     print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KIRI -> Mulai dari BLIND_PUNCH!")
                 elif 1400 < pwm_knob < 1600:
+                    await flight.set_mode_guided(self.master)
                     self.ctx.state_phase = "CENTERING_GATE_1"
                     print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB TENGAH -> Mulai dari CARI GAWANG!")
                 elif pwm_knob > 1700:
+                    await flight.set_mode_guided(self.master)
                     self.ctx.state_phase = "FIND_ARUCO_1"
                     print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KANAN -> Mulai dari CARI ARUCO!")
                 else:
