@@ -13,7 +13,7 @@ import supervision as sv
 
 # CONFIGURATION
 UDP_IP = "127.0.0.1"
-MODEL_PATH = "/home/ambatron/DRONE_INAV/Krti_model.pt" # Menggunakan .pt dulu
+MODEL_PATH = "yolov8n.pt" # Pakai model bawaan YOLO (COCO) sementara buat Ghost Flight
 CONFIDENCE_THRESHOLD = 0.25
 
 import config
