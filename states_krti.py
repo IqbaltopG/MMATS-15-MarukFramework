@@ -34,7 +34,7 @@ class BaseState:
 # ---------------------------------------------------------
 class FindDoubleGate(BaseState):
     def __init__(self):
-        self.punch_distance = 4.0 # BERAPA METER DARI AWAL NGE-LOCK SAMPAI NEMBUS GAWANG
+        self.punch_distance = 1.0 # JARAK SISA DARI TITIK GAWANG HILANG (DI BAWAH PERUT) SAMPAI NEMBUS
         
     async def execute(self, drone, ctx):
         front_status = state.target_front.get("status", "LOST")
@@ -45,11 +45,10 @@ class FindDoubleGate(BaseState):
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         if front_status == "LOCKED" and front_class == "DoubleGate":
-            if not ctx.has_seen_target:
-                # Kunci koordinat AWAL pas pertama kali ngelihat gawang!
-                ctx.blind_start_x = state.x
-                ctx.blind_start_y = state.y
-                ctx.has_seen_target = True
+            # UPDATE KOORDINAT TERUS SELAMA MASIH KELIHATAN
+            ctx.blind_start_x = state.x
+            ctx.blind_start_y = state.y
+            ctx.has_seen_target = True
                 
             yaw_cmd = front_err_x * ctx.kp_yaw
             fwd_cmd = 0.8
@@ -58,8 +57,7 @@ class FindDoubleGate(BaseState):
             if abs(front_err_x) > 50:
                 fwd_cmd = 0.2
                 
-            ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
-            print(f"[AUTOPILOT] [DOUBLE GATE] Centering... Terbang: {ctx.dist_flown:.2f}/{self.punch_distance}m")
+            print(f"[AUTOPILOT] [DOUBLE GATE] Centering... Y-Tracking aktif.")
             await flight.send_body_velocity(drone, forward_m_s=fwd_cmd, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=yaw_cmd)
         else:
             if ctx.has_seen_target:
@@ -71,14 +69,8 @@ class FindDoubleGate(BaseState):
                     ctx.has_seen_target = False
                     return
                 else:
-                    # ACTIVE LIDAR ANTI-DRIFT (Kalo jarak lidar di bawah 2 meter, berarti ngelewatin tiang gawang)
-                    strafe_cmd = 0.0
-                    if state.lidar_left < 2.0 or state.lidar_right < 2.0:
-                        strafe_cmd = (state.lidar_right - state.lidar_left) * 0.1
-                        strafe_cmd = clamp(strafe_cmd, -0.3, 0.3)
-                        
-                    print(f"[AUTOPILOT] Gawang hilang! Blind punch sisa jarak... ({ctx.dist_flown:.2f}/{self.punch_distance}m). Anti-Drift: {strafe_cmd:.2f}")
-                    await flight.send_body_velocity(drone, forward_m_s=0.8, right_m_s=strafe_cmd, down_m_s=up_cmd, yaw_deg_s=0.0)
+                    print(f"[AUTOPILOT] Gawang hilang! Blind punch sisa jarak... ({ctx.dist_flown:.2f}/{self.punch_distance}m)")
+                    await flight.send_body_velocity(drone, forward_m_s=0.8, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
                     return
             
             print("[AUTOPILOT] Nyari Double Gate... Terbang lurus pelan.")
@@ -209,7 +201,7 @@ class DeadReckoningHover(BaseState):
 # ---------------------------------------------------------
 class FindTripleGate(BaseState):
     def __init__(self):
-        self.punch_distance = 5.0 # JARAK NEMBUS TRIPLE GATE DARI PERTAMA KALI NGE-LOCK
+        self.punch_distance = 1.0 # JARAK SISA DARI TITIK GAWANG HILANG (DI BAWAH PERUT) SAMPAI NEMBUS
         
     async def execute(self, drone, ctx):
         front_status = state.target_front.get("status", "LOST")
@@ -220,18 +212,17 @@ class FindTripleGate(BaseState):
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         if front_status == "LOCKED" and front_class == "TripleGate":
-            if not ctx.has_seen_target:
-                ctx.blind_start_x = state.x
-                ctx.blind_start_y = state.y
-                ctx.has_seen_target = True
+            # UPDATE KOORDINAT TERUS SELAMA MASIH KELIHATAN
+            ctx.blind_start_x = state.x
+            ctx.blind_start_y = state.y
+            ctx.has_seen_target = True
             
             yaw_cmd = front_err_x * ctx.kp_yaw
             fwd_cmd = 0.8
             if abs(front_err_x) > 50:
                 fwd_cmd = 0.2
                 
-            ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
-            print(f"[AUTOPILOT] [TRIPLE GATE] Centering... Terbang: {ctx.dist_flown:.2f}/{self.punch_distance}m")
+            print(f"[AUTOPILOT] [TRIPLE GATE] Centering... Y-Tracking aktif.")
             await flight.send_body_velocity(drone, forward_m_s=fwd_cmd, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=yaw_cmd)
         else:
             if ctx.has_seen_target:
@@ -242,14 +233,8 @@ class FindTripleGate(BaseState):
                     ctx.has_seen_target = False
                     return
                 else:
-                    # ACTIVE LIDAR ANTI-DRIFT 
-                    strafe_cmd = 0.0
-                    if state.lidar_left < 2.0 or state.lidar_right < 2.0:
-                        strafe_cmd = (state.lidar_right - state.lidar_left) * 0.1
-                        strafe_cmd = clamp(strafe_cmd, -0.3, 0.3)
-                        
-                    print(f"[AUTOPILOT] Gawang hilang! Blind punch sisa jarak... ({ctx.dist_flown:.2f}/{self.punch_distance}m). Anti-Drift: {strafe_cmd:.2f}")
-                    await flight.send_body_velocity(drone, forward_m_s=0.8, right_m_s=strafe_cmd, down_m_s=up_cmd, yaw_deg_s=0.0)
+                    print(f"[AUTOPILOT] Gawang hilang! Blind punch sisa jarak... ({ctx.dist_flown:.2f}/{self.punch_distance}m)")
+                    await flight.send_body_velocity(drone, forward_m_s=0.8, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
                     return
             
             print("[AUTOPILOT] Nyari Triple Gate... Terbang lurus pelan.")
