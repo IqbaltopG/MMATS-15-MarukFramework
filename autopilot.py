@@ -107,22 +107,22 @@ class Autopilot:
                 pwm_knob = state.memory_knob
                 if pwm_knob < 1300:
                     print("[AUTOPILOT] 🤖 FULL AUTO TAKEOFF SEQUENCE INITIATED!")
-                    await flight.arm_and_takeoff(self.master, altitude_m=1.5)
-                    self.ctx.state_phase = "FIND_DOUBLE_GATE"
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KIRI -> Mulai dari Cari Double Gate!")
+                    await flight.arm_and_takeoff(self.master, altitude_m=1.0)
+                    self.ctx.state_phase = "YAW_RIGHT"
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KIRI -> Mulai dari Belok Kanan ke Double Gate!")
                 elif 1400 < pwm_knob < 1600:
                     await flight.set_mode_guided(self.master)
-                    self.ctx.state_phase = "FIND_DROPBOX"
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB TENGAH -> Mulai dari Cari Kotak Merah!")
+                    self.ctx.state_phase = "DROP_MEDKIT"
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB TENGAH -> Mulai dari Drop Medkit!")
                 elif pwm_knob > 1700:
                     await flight.set_mode_guided(self.master)
-                    self.ctx.state_phase = "FIND_TRIPLE_GATE"
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KANAN -> Mulai dari Triple Gate (Aruco 2 ditarik)!")
+                    self.ctx.state_phase = "YAW_LEFT"
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KANAN -> Mulai dari Belok Kiri ke Triple Gate!")
                 else:
                     print("[AUTOPILOT] 🤖 FULL AUTO TAKEOFF SEQUENCE INITIATED (Fallback)!")
-                    await flight.arm_and_takeoff(self.master, altitude_m=1.5)
-                    self.ctx.state_phase = "FIND_DOUBLE_GATE" # Fallback aman
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: Default -> Cari Double Gate!")
+                    await flight.arm_and_takeoff(self.master, altitude_m=1.0)
+                    self.ctx.state_phase = "YAW_RIGHT" # Fallback aman
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: Default -> Belok Kanan ke Double Gate!")
 
             current_state = STATE_REGISTRY.get(self.ctx.state_phase)
             if current_state:
