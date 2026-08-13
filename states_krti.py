@@ -136,14 +136,30 @@ def reset_state_anchor(ctx):
 class PunchDoubleGate(BaseState):
     def __init__(self):
         self.state_distance = 4.0  # HARDCODE: Ukur dari titik mulai maju sampai 1m di belakang gawang
+        self.stabilize_ticks = 0
+        self.stabilized = False
         
     async def execute(self, drone, ctx):
         up_cmd = altitude_hold()
+        
+        # STABILIZE DELAY: Hover 1.5 detik biar heading terkunci sempurna!
+        if not self.stabilized:
+            self.stabilize_ticks += 1
+            print(f"[AUTOPILOT] [DOUBLE GATE] 🔒 Mengunci heading... ({self.stabilize_ticks}/15)")
+            await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
+            if self.stabilize_ticks >= 15:  # 1.5 detik (10Hz)
+                self.stabilized = True
+                reset_state_anchor(ctx)  # Kunci anchor SETELAH heading stabil!
+                print("[AUTOPILOT] [DOUBLE GATE] ✅ Heading terkunci! GAS MAJU!")
+            return
+        
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
         
         if ctx.dist_flown > self.state_distance:
             print(f"[AUTOPILOT] ✅ DOUBLE GATE NEMBUS! ({ctx.dist_flown:.2f}m). Gas ke Drop Box!")
             reset_state_anchor(ctx)
+            self.stabilize_ticks = 0
+            self.stabilized = False
             ctx.state_phase = "PUNCH_TO_DROPBOX"
             return
         
@@ -239,14 +255,30 @@ class YawLeft(BaseState):
 class PunchTripleGate(BaseState):
     def __init__(self):
         self.state_distance = 6.0  # HARDCODE: Jarak dari titik mulai sampai 1m di belakang Triple Gate
+        self.stabilize_ticks = 0
+        self.stabilized = False
         
     async def execute(self, drone, ctx):
         up_cmd = altitude_hold()
+        
+        # STABILIZE DELAY: Hover 1.5 detik biar heading terkunci sempurna!
+        if not self.stabilized:
+            self.stabilize_ticks += 1
+            print(f"[AUTOPILOT] [TRIPLE GATE] 🔒 Mengunci heading... ({self.stabilize_ticks}/15)")
+            await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
+            if self.stabilize_ticks >= 15:
+                self.stabilized = True
+                reset_state_anchor(ctx)
+                print("[AUTOPILOT] [TRIPLE GATE] ✅ Heading terkunci! GAS MAJU!")
+            return
+        
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
         
         if ctx.dist_flown > self.state_distance:
             print(f"[AUTOPILOT] ✅ TRIPLE GATE NEMBUS! ({ctx.dist_flown:.2f}m). Gas ke Finish!")
             reset_state_anchor(ctx)
+            self.stabilize_ticks = 0
+            self.stabilized = False
             ctx.state_phase = "PUNCH_TO_FINISH"
             return
         
