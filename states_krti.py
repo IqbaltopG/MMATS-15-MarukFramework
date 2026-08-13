@@ -5,13 +5,41 @@ from comms import state
 from utils import clamp, calculate_distance
 
 # =====================================================================
-# KRTI 2024 MASTER SEQUENCE (ODOMETRY-FIRST + YOLO STEERING)
+# KRTI 2024 — PURE DEAD RECKONING (TANPA KAMERA!)
 # =====================================================================
+# SEMUA transisi state = JARAK (Odometry) + SUDUT (Gyro)
+# YOLO = NGGAK ADA. Drone terbang buta tapi presisi.
+# FAILSAFE = Berlapis: Timeout, Altitude Fence, Geofence, Kill Switch
+# =====================================================================
+#
 # FLOW:
-#   YAW_RIGHT → FIND_DOUBLE_GATE → FIND_DROPBOX → DROP_MEDKIT
-#   → YAW_LEFT → FIND_TRIPLE_GATE → DEAD_RECKONING_FINISH → LANDING
+#   YAW_RIGHT → PUNCH_DOUBLE_GATE → PUNCH_TO_DROPBOX → DROP_MEDKIT
+#   → YAW_LEFT → PUNCH_TRIPLE_GATE → PUNCH_TO_FINISH → LANDING
+#
+# TUNING DI LAPANGAN:
+#   1. Ukur semua jarak pakai METERAN TUKANG
+#   2. Update self.state_distance di setiap state
+#   3. Update self.target_angle di YawRight dan YawLeft
+#   4. Bench test (props off) cek telemetri
+#   5. Test terbang pendek satu state dulu
 # =====================================================================
 
+# ========================
+# KONFIGURASI GLOBAL
+# ========================
+TARGET_ALTITUDE = -1.0       # Ketinggian target (NED: negatif = naik)
+MAX_ALTITUDE    = -1.8       # Batas atas (lebih negatif = lebih tinggi)
+MIN_ALTITUDE    = -0.3       # Batas bawah (mendekati tanah)
+GEOFENCE_RADIUS = 25.0       # Meter dari titik awal, kalau lebih = DARURAT
+MISSION_TIMEOUT = 180        # Detik total misi (3 menit). Lebih = DARURAT
+STATE_TIMEOUT   = 600        # Ticks per state (60 detik). Lebih = STUCK
+
+CRUISE_SPEED    = 0.5        # m/s — Kecepatan maju utama (PELAN = PRESISI)
+YAW_SPEED       = 20.0       # deg/s — Kecepatan belok (PELAN = PRESISI)
+
+# ========================
+# MISSION CONTEXT
+# ========================
 class MissionContext:
     def __init__(self):
         self.state_phase = "IDLE"
@@ -21,15 +49,66 @@ class MissionContext:
         self.blind_start_y = 0.0
         self.dist_flown = 0.0
         
-        # PID Tuning (TUNE DI LAPANGAN!)
-        self.kp_yaw = 0.005
+        # Failsafe Trackers
+        self.mission_start_x = 0.0
+        self.mission_start_y = 0.0
+        self.mission_start_time = None
+        self.state_ticks = 0  # Counter per-state timeout
+        
+        # PID Altitude
+        self.kp_alt = 0.5
 
 class BaseState:
     async def execute(self, drone, ctx):
         pass
 
 # =================================================================
-# HELPER: Hitung selisih sudut dengan wrap-around 0°↔360°
+# FAILSAFE ENGINE — Dipanggil SETIAP TICK sebelum eksekusi state
+# =================================================================
+async def run_failsafes(drone, ctx):
+    """
+    Return True kalau DARURAT (harus landing).
+    Return False kalau aman (lanjut misi).
+    """
+    import time
+    
+    # --- FAILSAFE 1: ALTITUDE FENCE ---
+    if state.z < MAX_ALTITUDE:
+        print(f"[🚨 FAILSAFE] KETINGGIAN TERLALU TINGGI! z={state.z:.2f}m (Batas: {MAX_ALTITUDE}m). EMERGENCY LAND!")
+        ctx.state_phase = "EMERGENCY_LAND"
+        return True
+        
+    if state.z > MIN_ALTITUDE and ctx.state_phase not in ("LANDING_SEQUENCE", "EMERGENCY_LAND", "IDLE", "DONE"):
+        print(f"[🚨 FAILSAFE] KETINGGIAN TERLALU RENDAH! z={state.z:.2f}m (Batas: {MIN_ALTITUDE}m). EMERGENCY LAND!")
+        ctx.state_phase = "EMERGENCY_LAND"
+        return True
+    
+    # --- FAILSAFE 2: GEOFENCE ---
+    dist_from_home = calculate_distance(ctx.mission_start_x, ctx.mission_start_y, state.x, state.y)
+    if dist_from_home > GEOFENCE_RADIUS:
+        print(f"[🚨 FAILSAFE] GEOFENCE BREACH! Jarak dari home: {dist_from_home:.1f}m (Batas: {GEOFENCE_RADIUS}m). EMERGENCY LAND!")
+        ctx.state_phase = "EMERGENCY_LAND"
+        return True
+    
+    # --- FAILSAFE 3: MISSION TIMEOUT ---
+    if ctx.mission_start_time is not None:
+        elapsed = time.time() - ctx.mission_start_time
+        if elapsed > MISSION_TIMEOUT:
+            print(f"[🚨 FAILSAFE] MISSION TIMEOUT! Elapsed: {elapsed:.0f}s (Batas: {MISSION_TIMEOUT}s). EMERGENCY LAND!")
+            ctx.state_phase = "EMERGENCY_LAND"
+            return True
+    
+    # --- FAILSAFE 4: PER-STATE TIMEOUT ---
+    ctx.state_ticks += 1
+    if ctx.state_ticks > STATE_TIMEOUT:
+        print(f"[🚨 FAILSAFE] STATE TIMEOUT! State '{ctx.state_phase}' stuck {ctx.state_ticks} ticks. EMERGENCY LAND!")
+        ctx.state_phase = "EMERGENCY_LAND"
+        return True
+    
+    return False  # Semua aman
+
+# =================================================================
+# HELPER
 # =================================================================
 def yaw_difference(current, start):
     diff = abs(current - start)
@@ -37,277 +116,207 @@ def yaw_difference(current, start):
         diff = 360 - diff
     return diff
 
+def altitude_hold():
+    """Return up_cmd untuk maintain altitude konstan."""
+    z_err = TARGET_ALTITUDE - state.z
+    return clamp(z_err * 0.5, -0.5, 0.5)
+
+def reset_state_anchor(ctx):
+    """Reset odometry anchor dan state tick counter."""
+    ctx.blind_start_x = state.x
+    ctx.blind_start_y = state.y
+    ctx.dist_flown = 0.0
+    ctx.state_ticks = 0
+
 # ---------------------------------------------------------
-# 0. YAW RIGHT (~90° dari Aruco 1 ke arah Double Gate)
+# 0. YAW RIGHT (Belok kanan dari Aruco 1 ke arah Double Gate)
 # ---------------------------------------------------------
 class YawRight(BaseState):
     def __init__(self):
-        self.target_angle = 90.0  # HARDCODE: Belok kanan berapa derajat
-        self.yaw_speed = 25.0     # deg/s (pelan biar presisi)
+        self.target_angle = 90.0   # HARDCODE: Derajat belok kanan
         self.start_yaw = None
         
     async def execute(self, drone, ctx):
-        z_err = -1.0 - state.z
-        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
+        up_cmd = altitude_hold()
         
-        # Kunci heading awal sekali
         if self.start_yaw is None:
             self.start_yaw = state.yaw
-            print(f"[AUTOPILOT] YAW RIGHT dimulai! Heading awal: {self.start_yaw:.1f}°, Target: +{self.target_angle}°")
+            print(f"[AUTOPILOT] ➡️ YAW RIGHT dimulai! Heading: {self.start_yaw:.1f}°, Target: +{self.target_angle}°")
         
         diff = yaw_difference(state.yaw, self.start_yaw)
         
-        if diff >= self.target_angle - 5.0:  # Toleransi 5 derajat
-            print(f"[AUTOPILOT] YAW RIGHT SELESAI! Heading: {state.yaw:.1f}° (Selisih: {diff:.1f}°). Lanjut cari Double Gate...")
-            ctx.state_phase = "FIND_DOUBLE_GATE"
-            self.start_yaw = None  # Reset buat pemakaian ulang
+        if diff >= self.target_angle - 3.0:  # Toleransi 3 derajat
+            print(f"[AUTOPILOT] ✅ YAW RIGHT SELESAI! ({diff:.1f}°). Gas ke Double Gate!")
+            self.start_yaw = None
+            reset_state_anchor(ctx)
+            ctx.state_phase = "PUNCH_DOUBLE_GATE"
             return
         
-        print(f"[AUTOPILOT] [YAW RIGHT] Muter... {diff:.1f}° / {self.target_angle}°")
-        await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=self.yaw_speed)
+        print(f"[AUTOPILOT] [YAW RIGHT] {diff:.1f}° / {self.target_angle}°")
+        await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=YAW_SPEED)
 
 # ---------------------------------------------------------
-# 1. DOUBLE GATE
+# 1. PUNCH DOUBLE GATE (Maju lurus X meter nembus gawang)
 # ---------------------------------------------------------
-class FindDoubleGate(BaseState):
+class PunchDoubleGate(BaseState):
     def __init__(self):
-        self.state_distance = 4.0  # HARDCODE: Jarak dari titik pertama ngelihat gawang sampai nembus
-        self.initialized = False
+        self.state_distance = 4.0  # HARDCODE: Ukur dari titik mulai maju sampai 1m di belakang gawang
         
     async def execute(self, drone, ctx):
-        front_status = state.target_front.get("status", "LOST")
-        front_class = state.target_front.get("class", "none")
-        front_err_x = state.target_front.get("error_x", 0)
-
-        z_err = -1.0 - state.z
-        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
-
-        # WAIT FOR FIRST-SIGHT: Nggak gerak sampai YOLO ngelihat gawang
-        if not self.initialized:
-            if front_status == "LOCKED" and front_class == "DoubleGate":
-                print("[AUTOPILOT] DOUBLE GATE TERDETEKSI PERTAMA KALI! Mengunci Anchor Odom...")
-                ctx.blind_start_x = state.x
-                ctx.blind_start_y = state.y
-                self.initialized = True
-            else:
-                print("[AUTOPILOT] Menunggu Double Gate masuk frame...")
-                await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
-                return
-
+        up_cmd = altitude_hold()
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
         
         if ctx.dist_flown > self.state_distance:
-            print(f"[AUTOPILOT] DOUBLE GATE SELESAI ({self.state_distance}m). Lanjut Drop Box...")
-            ctx.state_phase = "FIND_DROPBOX"
-            self.initialized = False
+            print(f"[AUTOPILOT] ✅ DOUBLE GATE NEMBUS! ({ctx.dist_flown:.2f}m). Gas ke Drop Box!")
+            reset_state_anchor(ctx)
+            ctx.state_phase = "PUNCH_TO_DROPBOX"
             return
-
-        yaw_cmd = 0.0
-        fwd_cmd = 0.8
-
-        if front_status == "LOCKED" and front_class == "DoubleGate":
-            yaw_cmd = front_err_x * ctx.kp_yaw
-            if abs(front_err_x) > 50:
-                fwd_cmd = 0.3
-                
-        print(f"[AUTOPILOT] [DOUBLE GATE] Terbang: {ctx.dist_flown:.2f}/{self.state_distance}m | Yaw: {yaw_cmd:.2f}")
-        await flight.send_body_velocity(drone, forward_m_s=fwd_cmd, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=yaw_cmd)
+        
+        print(f"[AUTOPILOT] [DOUBLE GATE] ✈️ {ctx.dist_flown:.2f}/{self.state_distance}m")
+        await flight.send_body_velocity(drone, forward_m_s=CRUISE_SPEED, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
 
 # ---------------------------------------------------------
-# 2. DROP BOX (NYARI KOTAK MERAH + CENTERING)
+# 2. PUNCH TO DROP BOX (Maju lurus X meter ke kotak merah)
 # ---------------------------------------------------------
-class FindDropBox(BaseState):
+class PunchToDropBox(BaseState):
     def __init__(self):
-        self.state_distance = 3.0  # HARDCODE: Jarak dari setelah nembus Double Gate ke titik Drop Box
-        self.initialized = False
+        self.state_distance = 3.0  # HARDCODE: Jarak dari belakang gawang ke titik Drop Box
         
     async def execute(self, drone, ctx):
-        front_status = state.target_front.get("status", "LOST")
-        front_class = state.target_front.get("class", "none")
-        front_err_x = state.target_front.get("error_x", 0)
-
-        z_err = -1.0 - state.z
-        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
-
-        # WAIT FOR FIRST-SIGHT
-        if not self.initialized:
-            if front_status == "LOCKED" and front_class == "DropBox":
-                print("[AUTOPILOT] DROP BOX TERDETEKSI PERTAMA KALI! Mengunci Anchor Odom...")
-                ctx.blind_start_x = state.x
-                ctx.blind_start_y = state.y
-                self.initialized = True
-            else:
-                # Maju pelan-pelan nyari kotak merah
-                print("[AUTOPILOT] Menunggu Drop Box masuk frame... Maju pelan...")
-                await flight.send_body_velocity(drone, forward_m_s=0.4, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
-                return
-
+        up_cmd = altitude_hold()
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
         
         if ctx.dist_flown > self.state_distance:
-            print(f"[AUTOPILOT] SAMPAI DI ATAS DROP BOX! Transisi ke DROP_MEDKIT...")
+            print(f"[AUTOPILOT] ✅ SAMPAI DI DROP BOX! ({ctx.dist_flown:.2f}m). Menjatuhkan medkit...")
+            reset_state_anchor(ctx)
             ctx.state_phase = "DROP_MEDKIT"
-            self.initialized = False
             return
-
-        yaw_cmd = 0.0
-        fwd_cmd = 0.5
-
-        if front_status == "LOCKED" and front_class == "DropBox":
-            yaw_cmd = front_err_x * ctx.kp_yaw
-                
-        print(f"[AUTOPILOT] [DROP BOX] Terbang: {ctx.dist_flown:.2f}/{self.state_distance}m | Yaw: {yaw_cmd:.2f}")
-        await flight.send_body_velocity(drone, forward_m_s=fwd_cmd, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=yaw_cmd)
+        
+        print(f"[AUTOPILOT] [DROP BOX] ✈️ {ctx.dist_flown:.2f}/{self.state_distance}m")
+        await flight.send_body_velocity(drone, forward_m_s=CRUISE_SPEED, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
 
 # ---------------------------------------------------------
-# 3. DROP MEDKIT (STOP + BUKA SERVO + NUNGGU MANUSIA)
+# 3. DROP MEDKIT (Stop + Servo + Nunggu Manusia)
 # ---------------------------------------------------------
 class DropMedkit(BaseState):
     def __init__(self):
         self.timeout_counter = 0
-        self.wait_ticks = 100  # 10 detik (10Hz) — Waktu manusia lari pindahin kotak
+        self.wait_ticks = 100      # 10 detik (10Hz) — Manusia lari pindahin kotak
         self.servo_opened = False
         
     async def execute(self, drone, ctx):
-        z_err = -1.0 - state.z
-        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
+        up_cmd = altitude_hold()
         
         # HOVER DI TEMPAT
         await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
         
         if not self.servo_opened:
             print("[AUTOPILOT] 💣 SERVO DIBUKA! MEDKIT DIJATUHKAN!")
-            # TODO: Tambahin perintah servo di sini (misal: flight.set_servo(drone, channel, pwm))
+            # TODO: flight.set_servo(drone, channel, pwm)
             self.servo_opened = True
         
         self.timeout_counter += 1
         remaining = (self.wait_ticks - self.timeout_counter) / 10.0
-        print(f"[AUTOPILOT] [DROP MEDKIT] Nunggu manusia pindahin kotak... Sisa: {remaining:.1f} detik")
+        
+        if self.timeout_counter % 10 == 0:  # Print tiap 1 detik aja biar nggak spam
+            print(f"[AUTOPILOT] [DROP MEDKIT] ⏳ Nunggu manusia... Sisa: {remaining:.0f} detik")
         
         if self.timeout_counter > self.wait_ticks:
-            print("[AUTOPILOT] Jeda selesai! Lanjut belok kiri ke Triple Gate...")
-            ctx.state_phase = "YAW_LEFT"
+            print("[AUTOPILOT] ✅ Jeda selesai! Gas belok kiri ke Triple Gate!")
             self.timeout_counter = 0
             self.servo_opened = False
+            reset_state_anchor(ctx)
+            ctx.state_phase = "YAW_LEFT"
 
 # ---------------------------------------------------------
-# 4. YAW LEFT (~30-45° dari Drop Box ke arah Triple Gate)
+# 4. YAW LEFT (Belok kiri dari Drop Box ke arah Triple Gate)
 # ---------------------------------------------------------
 class YawLeft(BaseState):
     def __init__(self):
-        self.target_angle = 30.0  # HARDCODE: Belok kiri berapa derajat (UKUR DI LAPANGAN!)
-        self.yaw_speed = -25.0    # Negatif = belok kiri
+        self.target_angle = 30.0   # HARDCODE: Derajat belok kiri (UKUR DI LAPANGAN!)
         self.start_yaw = None
         
     async def execute(self, drone, ctx):
-        z_err = -1.0 - state.z
-        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
+        up_cmd = altitude_hold()
         
         if self.start_yaw is None:
             self.start_yaw = state.yaw
-            print(f"[AUTOPILOT] YAW LEFT dimulai! Heading awal: {self.start_yaw:.1f}°, Target: -{self.target_angle}°")
+            print(f"[AUTOPILOT] ⬅️ YAW LEFT dimulai! Heading: {self.start_yaw:.1f}°, Target: -{self.target_angle}°")
         
         diff = yaw_difference(state.yaw, self.start_yaw)
         
-        if diff >= self.target_angle - 5.0:
-            print(f"[AUTOPILOT] YAW LEFT SELESAI! Heading: {state.yaw:.1f}° (Selisih: {diff:.1f}°). Lanjut cari Triple Gate...")
-            ctx.state_phase = "FIND_TRIPLE_GATE"
+        if diff >= self.target_angle - 3.0:
+            print(f"[AUTOPILOT] ✅ YAW LEFT SELESAI! ({diff:.1f}°). Gas ke Triple Gate!")
             self.start_yaw = None
+            reset_state_anchor(ctx)
+            ctx.state_phase = "PUNCH_TRIPLE_GATE"
             return
         
-        print(f"[AUTOPILOT] [YAW LEFT] Muter... {diff:.1f}° / {self.target_angle}°")
-        await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=self.yaw_speed)
+        print(f"[AUTOPILOT] [YAW LEFT] {diff:.1f}° / {self.target_angle}°")
+        await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=-YAW_SPEED)
 
 # ---------------------------------------------------------
-# 5. TRIPLE GATE
+# 5. PUNCH TRIPLE GATE (Maju lurus X meter nembus gawang)
 # ---------------------------------------------------------
-class FindTripleGate(BaseState):
+class PunchTripleGate(BaseState):
     def __init__(self):
-        self.state_distance = 6.0  # HARDCODE: Jarak dari titik pertama ngelihat Triple Gate sampai nembus
-        self.initialized = False
+        self.state_distance = 6.0  # HARDCODE: Jarak dari titik mulai sampai 1m di belakang Triple Gate
         
     async def execute(self, drone, ctx):
-        front_status = state.target_front.get("status", "LOST")
-        front_class = state.target_front.get("class", "none")
-        front_err_x = state.target_front.get("error_x", 0)
-
-        z_err = -1.0 - state.z
-        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
-
-        if not self.initialized:
-            if front_status == "LOCKED" and front_class == "TripleGate":
-                print("[AUTOPILOT] TRIPLE GATE TERDETEKSI PERTAMA KALI! Mengunci Anchor Odom...")
-                ctx.blind_start_x = state.x
-                ctx.blind_start_y = state.y
-                self.initialized = True
-            else:
-                print("[AUTOPILOT] Menunggu Triple Gate masuk frame...")
-                await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
-                return
-
+        up_cmd = altitude_hold()
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
         
         if ctx.dist_flown > self.state_distance:
-            print(f"[AUTOPILOT] TRIPLE GATE SELESAI ({self.state_distance}m). Lanjut Dead Reckoning ke Aruco Finish...")
-            ctx.state_phase = "DEAD_RECKONING_FINISH"
-            self.initialized = False
+            print(f"[AUTOPILOT] ✅ TRIPLE GATE NEMBUS! ({ctx.dist_flown:.2f}m). Gas ke Finish!")
+            reset_state_anchor(ctx)
+            ctx.state_phase = "PUNCH_TO_FINISH"
             return
-
-        yaw_cmd = 0.0
-        fwd_cmd = 0.8
-
-        if front_status == "LOCKED" and front_class == "TripleGate":
-            yaw_cmd = front_err_x * ctx.kp_yaw
-            if abs(front_err_x) > 50:
-                fwd_cmd = 0.3
-                
-        print(f"[AUTOPILOT] [TRIPLE GATE] Terbang: {ctx.dist_flown:.2f}/{self.state_distance}m | Yaw: {yaw_cmd:.2f}")
-        await flight.send_body_velocity(drone, forward_m_s=fwd_cmd, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=yaw_cmd)
+        
+        print(f"[AUTOPILOT] [TRIPLE GATE] ✈️ {ctx.dist_flown:.2f}/{self.state_distance}m")
+        await flight.send_body_velocity(drone, forward_m_s=CRUISE_SPEED, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
 
 # ---------------------------------------------------------
-# 6. DEAD RECKONING FINISH (Maju X meter lurus ke Aruco 3)
+# 6. PUNCH TO FINISH (Maju lurus X meter ke titik Aruco 3)
 # ---------------------------------------------------------
-class DeadReckoningFinish(BaseState):
-    """
-    Aruco 3 itu kertas di lantai. Kamera depan horizontal di 1m susah ngelihat.
-    Jadi kita SKIP deteksi YOLO, langsung Dead Reckoning maju lurus aja.
-    """
+class PunchToFinish(BaseState):
     def __init__(self):
-        self.state_distance = 3.0  # HARDCODE: Jarak dari belakang Triple Gate ke titik Aruco 3
-        self.initialized = False
+        self.state_distance = 3.0  # HARDCODE: Jarak dari belakang Triple Gate ke titik landing
         
     async def execute(self, drone, ctx):
-        z_err = -1.0 - state.z
-        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
-        
-        if not self.initialized:
-            ctx.blind_start_x = state.x
-            ctx.blind_start_y = state.y
-            self.initialized = True
-            print(f"[AUTOPILOT] DEAD RECKONING FINISH dimulai! Maju lurus {self.state_distance}m ke Aruco 3...")
-
+        up_cmd = altitude_hold()
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
         
         if ctx.dist_flown > self.state_distance:
-            print(f"[AUTOPILOT] SAMPAI DI ATAS ARUCO 3! ({ctx.dist_flown:.2f}m). MULAI MENDARAT...")
+            print(f"[AUTOPILOT] ✅ SAMPAI DI TITIK FINISH! ({ctx.dist_flown:.2f}m). MENDARAT...")
             ctx.state_phase = "LANDING_SEQUENCE"
-            self.initialized = False
             return
-
-        print(f"[AUTOPILOT] [DR FINISH] Terbang lurus: {ctx.dist_flown:.2f}/{self.state_distance}m")
-        await flight.send_body_velocity(drone, forward_m_s=0.5, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
+        
+        print(f"[AUTOPILOT] [FINISH] ✈️ {ctx.dist_flown:.2f}/{self.state_distance}m")
+        await flight.send_body_velocity(drone, forward_m_s=CRUISE_SPEED, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
 
 # ---------------------------------------------------------
 # 7. LANDING
 # ---------------------------------------------------------
 class LandingSequence(BaseState):
     async def execute(self, drone, ctx):
-        print(f"[AUTOPILOT] LANDING SEKARANG! Altitude: {state.z:.2f}m")
-        # Positif down_m_s = turun (NED frame)
-        await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=0.5, yaw_deg_s=0.0)
+        print(f"[AUTOPILOT] 🛬 LANDING! Altitude: {state.z:.2f}m")
+        await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=0.4, yaw_deg_s=0.0)
         
-        if state.z > -0.15:  # Udah nyentuh tanah
-            print("[AUTOPILOT] 🏁 MISI SELESAI. MATIKAN MESIN!")
+        if state.z > -0.15:
+            print("[AUTOPILOT] 🏁 MISI SELESAI! MATIKAN MESIN!")
+            ctx.state_phase = "DONE"
+
+# ---------------------------------------------------------
+# 8. EMERGENCY LAND (Failsafe triggered)
+# ---------------------------------------------------------
+class EmergencyLand(BaseState):
+    async def execute(self, drone, ctx):
+        print(f"[🚨 EMERGENCY LAND] TURUN DARURAT! z={state.z:.2f}m")
+        # Turun agresif tanpa maju/mundur/kiri/kanan
+        await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=0.6, yaw_deg_s=0.0)
+        
+        if state.z > -0.15:
+            print("[🚨 EMERGENCY LAND] MENDARAT DARURAT SELESAI. MATIKAN MESIN!")
             ctx.state_phase = "DONE"
 
 # =====================================================================
@@ -316,12 +325,13 @@ class LandingSequence(BaseState):
 STATE_REGISTRY = {
     "IDLE": None,
     "YAW_RIGHT": YawRight(),
-    "FIND_DOUBLE_GATE": FindDoubleGate(),
-    "FIND_DROPBOX": FindDropBox(),
+    "PUNCH_DOUBLE_GATE": PunchDoubleGate(),
+    "PUNCH_TO_DROPBOX": PunchToDropBox(),
     "DROP_MEDKIT": DropMedkit(),
     "YAW_LEFT": YawLeft(),
-    "FIND_TRIPLE_GATE": FindTripleGate(),
-    "DEAD_RECKONING_FINISH": DeadReckoningFinish(),
+    "PUNCH_TRIPLE_GATE": PunchTripleGate(),
+    "PUNCH_TO_FINISH": PunchToFinish(),
     "LANDING_SEQUENCE": LandingSequence(),
+    "EMERGENCY_LAND": EmergencyLand(),
     "DONE": None
 }

@@ -1,7 +1,7 @@
 import asyncio
 from pymavlink import mavutil
 from comms import connect_drone, state, mavlink_router_task, start_udp_server
-from states_krti import STATE_REGISTRY, MissionContext
+from states_krti import STATE_REGISTRY, MissionContext, run_failsafes, reset_state_anchor
 from config import IS_SIMULATION
 import flight
 
@@ -103,30 +103,44 @@ class Autopilot:
             
             # 2. JIKA SAKLAR AI > 1700 (AI ACTIVE) TAPI STATE MASIH IDLE (Baru di-resume)
             if self.ctx.state_phase == "IDLE":
+                import time
                 # HACK DFA AMNESIA: TENTUKAN STATE RESUME BERDASARKAN KNOB (CH8)
                 pwm_knob = state.memory_knob
+                
+                # INISIALISASI FAILSAFE TRACKERS
+                self.ctx.mission_start_x = state.x
+                self.ctx.mission_start_y = state.y
+                self.ctx.mission_start_time = time.time()
+                
                 if pwm_knob < 1300:
                     print("[AUTOPILOT] 🤖 FULL AUTO TAKEOFF SEQUENCE INITIATED!")
                     await flight.arm_and_takeoff(self.master, altitude_m=1.0)
+                    reset_state_anchor(self.ctx)
                     self.ctx.state_phase = "YAW_RIGHT"
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KIRI -> Mulai dari Belok Kanan ke Double Gate!")
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KIRI -> Mulai dari Belok Kanan!")
                 elif 1400 < pwm_knob < 1600:
                     await flight.set_mode_guided(self.master)
+                    reset_state_anchor(self.ctx)
                     self.ctx.state_phase = "DROP_MEDKIT"
                     print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB TENGAH -> Mulai dari Drop Medkit!")
                 elif pwm_knob > 1700:
                     await flight.set_mode_guided(self.master)
+                    reset_state_anchor(self.ctx)
                     self.ctx.state_phase = "YAW_LEFT"
                     print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KANAN -> Mulai dari Belok Kiri ke Triple Gate!")
                 else:
                     print("[AUTOPILOT] 🤖 FULL AUTO TAKEOFF SEQUENCE INITIATED (Fallback)!")
                     await flight.arm_and_takeoff(self.master, altitude_m=1.0)
-                    self.ctx.state_phase = "YAW_RIGHT" # Fallback aman
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: Default -> Belok Kanan ke Double Gate!")
+                    reset_state_anchor(self.ctx)
+                    self.ctx.state_phase = "YAW_RIGHT"
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: Default -> Belok Kanan!")
+
+            # === FAILSAFE CHECK (SETIAP TICK!) ===
+            is_emergency = await run_failsafes(self.master, self.ctx)
+            # Kalau emergency, langsung skip ke emergency land state di bawah
 
             current_state = STATE_REGISTRY.get(self.ctx.state_phase)
             if current_state:
-                # Mengirim master sebagai 'drone' ke states.py
                 await current_state.execute(self.master, self.ctx)
                 if self.ctx.state_phase == 'DONE':
                     print("[AUTOPILOT] MISSION ACCOMPLISHED! Melepas kendali...")
