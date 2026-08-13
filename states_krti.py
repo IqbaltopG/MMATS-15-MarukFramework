@@ -41,7 +41,7 @@ class FindDoubleGate(BaseState):
         front_class = state.target_front.get("class", "none")
         front_err_x = state.target_front.get("error_x", 0)
 
-        z_err = -1.5 - state.z
+        z_err = -1.0 - state.z
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         if front_status == "LOCKED" and front_class == "DoubleGate":
@@ -86,7 +86,7 @@ class FindDropBox(BaseState):
         front_err_x = state.target_front.get("error_x", 0)
         front_area = state.target_front.get("area", 0)
 
-        z_err = -1.5 - state.z
+        z_err = -1.0 - state.z
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         if front_status == "LOCKED" and front_class == "DropBox":
@@ -117,7 +117,7 @@ class DeadReckoningDrop(BaseState):
         self.drop_distance = 1.0 # BRP METER DR HILANG SAMPE PAS DI PERUT (HARDCODE SINI)
         
     async def execute(self, drone, ctx):
-        z_err = -1.5 - state.z
+        z_err = -1.0 - state.z
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
         
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
@@ -147,7 +147,7 @@ class FindAruco2(BaseState):
         front_err_x = state.target_front.get("error_x", 0)
         front_area = state.target_front.get("area", 0)
 
-        z_err = -1.5 - state.z
+        z_err = -1.0 - state.z
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         if front_status == "LOCKED" and front_class == "Aruco":
@@ -177,7 +177,7 @@ class DeadReckoningHover(BaseState):
         self.drop_distance = 1.0 # Samain kayak drop box (jarak dari kamera ke perut)
         
     async def execute(self, drone, ctx):
-        z_err = -1.5 - state.z
+        z_err = -1.0 - state.z
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
         
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
@@ -208,7 +208,7 @@ class FindTripleGate(BaseState):
         front_class = state.target_front.get("class", "none")
         front_err_x = state.target_front.get("error_x", 0)
 
-        z_err = -1.5 - state.z
+        z_err = -1.0 - state.z
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         if front_status == "LOCKED" and front_class == "TripleGate":
@@ -250,7 +250,7 @@ class FindAruco3(BaseState):
         front_err_x = state.target_front.get("error_x", 0)
         front_area = state.target_front.get("area", 0)
 
-        z_err = -1.5 - state.z
+        z_err = -1.0 - state.z
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         if front_status == "LOCKED" and front_class == "Aruco":
@@ -281,7 +281,7 @@ class LandingSequence(BaseState):
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
         
         if ctx.dist_flown < self.drop_distance:
-            z_err = -1.5 - state.z
+            z_err = -1.0 - state.z
             up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
             print(f"[AUTOPILOT] [LANDING ALIGN] Maju presisi... Jarak: {ctx.dist_flown:.2f} / {self.drop_distance} m")
             await flight.send_body_velocity(drone, forward_m_s=0.4, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
