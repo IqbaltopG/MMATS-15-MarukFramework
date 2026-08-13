@@ -129,37 +129,9 @@ def reset_state_anchor(ctx):
     ctx.state_ticks = 0
 
 # ---------------------------------------------------------
-# 0. YAW RIGHT (FULL COURSE ONLY — Belok kanan dari Aruco 1)
-# ---------------------------------------------------------
-class YawRight(BaseState):
-    def __init__(self):
-        self.target_angle = 90.0   # HARDCODE: Derajat belok kanan
-        self.start_yaw = None
-        
-    async def execute(self, drone, ctx):
-        up_cmd = altitude_hold()
-        
-        if self.start_yaw is None:
-            self.start_yaw = state.yaw
-            print(f"[AUTOPILOT] ➡️ YAW RIGHT dimulai! Heading: {self.start_yaw:.1f}°, Target: +{self.target_angle}°")
-        
-        diff = yaw_difference(state.yaw, self.start_yaw)
-        
-        if diff >= self.target_angle - 3.0:
-            print(f"[AUTOPILOT] ✅ YAW RIGHT SELESAI! ({diff:.1f}°). Gas ke Double Gate!")
-            self.start_yaw = None
-            reset_state_anchor(ctx)
-            ctx.state_phase = "PUNCH_DOUBLE_GATE"
-            return
-        
-        print(f"[AUTOPILOT] [YAW RIGHT] {diff:.1f}° / {self.target_angle}°")
-        await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=YAW_SPEED)
-
-# ---------------------------------------------------------
 # 1. PUNCH DOUBLE GATE (Maju lurus X meter nembus gawang)
 # ---------------------------------------------------------
-# FULL COURSE: Masuk dari YAW_RIGHT
-# RESUME: Pilot lurusin moncong -> ketek CH6
+# PILOT lurusin moncong ke gawang → ketek CH6 → AI gas lurus!
 # ---------------------------------------------------------
 class PunchDoubleGate(BaseState):
     def __init__(self):
@@ -330,7 +302,6 @@ class EmergencyLand(BaseState):
 # =====================================================================
 STATE_REGISTRY = {
     "IDLE": None,
-    "YAW_RIGHT": YawRight(),
     "PUNCH_DOUBLE_GATE": PunchDoubleGate(),
     "PUNCH_TO_DROPBOX": PunchToDropBox(),
     "DROP_MEDKIT": DropMedkit(),
