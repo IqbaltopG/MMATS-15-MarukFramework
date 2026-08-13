@@ -33,10 +33,24 @@ class FindDoubleGate(BaseState):
         self.initialized = False
         
     async def execute(self, drone, ctx):
+        front_status = state.target_front.get("status", "LOST")
+        front_class = state.target_front.get("class", "none")
+        front_err_x = state.target_front.get("error_x", 0)
+
+        z_err = -1.0 - state.z
+        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
+
         if not self.initialized:
-            ctx.blind_start_x = state.x
-            ctx.blind_start_y = state.y
-            self.initialized = True
+            if front_status == "LOCKED" and front_class == "DoubleGate":
+                print("[AUTOPILOT] DOUBLE GATE TERDETEKSI PERTAMA KALI! Mengunci Anchor Odom...")
+                ctx.blind_start_x = state.x
+                ctx.blind_start_y = state.y
+                self.initialized = True
+            else:
+                # Belum ngelihat gawang sama sekali, muter/hover nyari gawang
+                print("[AUTOPILOT] Menunggu Double Gate masuk frame...")
+                await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
+                return
 
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
         
@@ -45,13 +59,6 @@ class FindDoubleGate(BaseState):
             ctx.state_phase = "FIND_DROPBOX"
             self.initialized = False
             return
-
-        front_status = state.target_front.get("status", "LOST")
-        front_class = state.target_front.get("class", "none")
-        front_err_x = state.target_front.get("error_x", 0)
-
-        z_err = -1.0 - state.z
-        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         yaw_cmd = 0.0
         fwd_cmd = 0.8
@@ -74,17 +81,27 @@ class FindDropBox(BaseState):
         self.timeout_counter = 0
         
     async def execute(self, drone, ctx):
-        if not self.initialized:
-            ctx.blind_start_x = state.x
-            ctx.blind_start_y = state.y
-            self.initialized = True
-            self.timeout_counter = 0
+        front_status = state.target_front.get("status", "LOST")
+        front_class = state.target_front.get("class", "none")
+        front_err_x = state.target_front.get("error_x", 0)
 
-        ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
-        
         z_err = -1.0 - state.z
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
+        if not self.initialized:
+            if front_status == "LOCKED" and front_class == "DropBox":
+                print("[AUTOPILOT] DROP BOX TERDETEKSI PERTAMA KALI! Mengunci Anchor Odom...")
+                ctx.blind_start_x = state.x
+                ctx.blind_start_y = state.y
+                self.initialized = True
+                self.timeout_counter = 0
+            else:
+                print("[AUTOPILOT] Menunggu Drop Box masuk frame...")
+                await flight.send_body_velocity(drone, forward_m_s=0.4, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
+                return
+
+        ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
+        
         if ctx.dist_flown > self.state_distance:
             # STOP DAN DROP!
             print("[AUTOPILOT] PAS DI ATAS DROP BOX! CEKREK SERVO DIBUKA! 💣")
@@ -97,10 +114,6 @@ class FindDropBox(BaseState):
                 ctx.state_phase = "FIND_ARUCO_2"
                 self.initialized = False
             return
-
-        front_status = state.target_front.get("status", "LOST")
-        front_class = state.target_front.get("class", "none")
-        front_err_x = state.target_front.get("error_x", 0)
 
         yaw_cmd = 0.0
         fwd_cmd = 0.5 # Pelan-pelan nyari kotak merah
@@ -122,17 +135,27 @@ class FindAruco2(BaseState):
         self.timeout_counter = 0
         
     async def execute(self, drone, ctx):
-        if not self.initialized:
-            ctx.blind_start_x = state.x
-            ctx.blind_start_y = state.y
-            self.initialized = True
-            self.timeout_counter = 0
+        front_status = state.target_front.get("status", "LOST")
+        front_class = state.target_front.get("class", "none")
+        front_err_x = state.target_front.get("error_x", 0)
 
-        ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
-        
         z_err = -1.0 - state.z
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
+        if not self.initialized:
+            if front_status == "LOCKED" and front_class == "Aruco":
+                print("[AUTOPILOT] ARUCO 2 TERDETEKSI PERTAMA KALI! Mengunci Anchor Odom...")
+                ctx.blind_start_x = state.x
+                ctx.blind_start_y = state.y
+                self.initialized = True
+                self.timeout_counter = 0
+            else:
+                print("[AUTOPILOT] Menunggu Aruco 2 ditarik manusia...")
+                await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
+                return
+
+        ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
+        
         if ctx.dist_flown > self.state_distance:
             print("[AUTOPILOT] PAS DI ATAS ARUCO 2! SAVE CHECKPOINT...")
             await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
@@ -143,10 +166,6 @@ class FindAruco2(BaseState):
                 ctx.state_phase = "FIND_TRIPLE_GATE"
                 self.initialized = False
             return
-
-        front_status = state.target_front.get("status", "LOST")
-        front_class = state.target_front.get("class", "none")
-        front_err_x = state.target_front.get("error_x", 0)
 
         yaw_cmd = 0.0
         fwd_cmd = 0.4 # Super pelan karena deket
@@ -166,10 +185,23 @@ class FindTripleGate(BaseState):
         self.initialized = False
         
     async def execute(self, drone, ctx):
+        front_status = state.target_front.get("status", "LOST")
+        front_class = state.target_front.get("class", "none")
+        front_err_x = state.target_front.get("error_x", 0)
+
+        z_err = -1.0 - state.z
+        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
+
         if not self.initialized:
-            ctx.blind_start_x = state.x
-            ctx.blind_start_y = state.y
-            self.initialized = True
+            if front_status == "LOCKED" and front_class == "TripleGate":
+                print("[AUTOPILOT] TRIPLE GATE TERDETEKSI PERTAMA KALI! Mengunci Anchor Odom...")
+                ctx.blind_start_x = state.x
+                ctx.blind_start_y = state.y
+                self.initialized = True
+            else:
+                print("[AUTOPILOT] Menunggu Triple Gate masuk frame...")
+                await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
+                return
 
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
         
@@ -178,13 +210,6 @@ class FindTripleGate(BaseState):
             ctx.state_phase = "FIND_ARUCO_3"
             self.initialized = False
             return
-
-        front_status = state.target_front.get("status", "LOST")
-        front_class = state.target_front.get("class", "none")
-        front_err_x = state.target_front.get("error_x", 0)
-
-        z_err = -1.0 - state.z
-        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         yaw_cmd = 0.0
         fwd_cmd = 0.8
@@ -206,10 +231,23 @@ class FindAruco3(BaseState):
         self.initialized = False
         
     async def execute(self, drone, ctx):
+        front_status = state.target_front.get("status", "LOST")
+        front_class = state.target_front.get("class", "none")
+        front_err_x = state.target_front.get("error_x", 0)
+
+        z_err = -1.0 - state.z
+        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
+
         if not self.initialized:
-            ctx.blind_start_x = state.x
-            ctx.blind_start_y = state.y
-            self.initialized = True
+            if front_status == "LOCKED" and front_class == "Aruco":
+                print("[AUTOPILOT] ARUCO 3 FINISH TERDETEKSI! Mengunci Anchor Odom...")
+                ctx.blind_start_x = state.x
+                ctx.blind_start_y = state.y
+                self.initialized = True
+            else:
+                print("[AUTOPILOT] Menunggu Aruco 3 Finish masuk frame...")
+                await flight.send_body_velocity(drone, forward_m_s=0.4, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
+                return
 
         ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
         
@@ -218,13 +256,6 @@ class FindAruco3(BaseState):
             ctx.state_phase = "LANDING_SEQUENCE"
             self.initialized = False
             return
-
-        front_status = state.target_front.get("status", "LOST")
-        front_class = state.target_front.get("class", "none")
-        front_err_x = state.target_front.get("error_x", 0)
-
-        z_err = -1.0 - state.z
-        up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         yaw_cmd = 0.0
         fwd_cmd = 0.5
