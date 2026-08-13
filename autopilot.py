@@ -1,7 +1,7 @@
 import asyncio
 from pymavlink import mavutil
 from comms import connect_drone, state, mavlink_router_task, start_udp_server
-from states import STATE_REGISTRY, MissionContext
+from states_krti import STATE_REGISTRY, MissionContext
 from config import IS_SIMULATION
 import flight
 
@@ -108,21 +108,21 @@ class Autopilot:
                 if pwm_knob < 1300:
                     print("[AUTOPILOT] 🤖 FULL AUTO TAKEOFF SEQUENCE INITIATED!")
                     await flight.arm_and_takeoff(self.master, altitude_m=1.5)
-                    self.ctx.state_phase = "BLIND_PUNCH_TAKEOFF"
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KIRI -> Mulai dari BLIND_PUNCH!")
+                    self.ctx.state_phase = "FIND_DOUBLE_GATE"
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KIRI -> Mulai dari Cari Double Gate!")
                 elif 1400 < pwm_knob < 1600:
                     await flight.set_mode_guided(self.master)
-                    self.ctx.state_phase = "CENTERING_GATE_1"
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB TENGAH -> Mulai dari CARI GAWANG!")
+                    self.ctx.state_phase = "FIND_DROPBOX"
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB TENGAH -> Mulai dari Cari Kotak Merah!")
                 elif pwm_knob > 1700:
                     await flight.set_mode_guided(self.master)
-                    self.ctx.state_phase = "FIND_ARUCO_1"
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KANAN -> Mulai dari CARI ARUCO!")
+                    self.ctx.state_phase = "FIND_TRIPLE_GATE"
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KANAN -> Mulai dari Triple Gate (Aruco 2 ditarik)!")
                 else:
                     print("[AUTOPILOT] 🤖 FULL AUTO TAKEOFF SEQUENCE INITIATED (Fallback)!")
                     await flight.arm_and_takeoff(self.master, altitude_m=1.5)
-                    self.ctx.state_phase = "BLIND_PUNCH_TAKEOFF" # Fallback aman
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: Default -> BLIND_PUNCH!")
+                    self.ctx.state_phase = "FIND_DOUBLE_GATE" # Fallback aman
+                    print("[AUTOPILOT] 🤖 CYBORG RESUME: Default -> Cari Double Gate!")
 
             current_state = STATE_REGISTRY.get(self.ctx.state_phase)
             if current_state:
