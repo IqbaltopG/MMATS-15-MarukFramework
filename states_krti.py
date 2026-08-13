@@ -35,7 +35,6 @@ MISSION_TIMEOUT = 180        # Detik total misi (3 menit). Lebih = DARURAT
 STATE_TIMEOUT   = 600        # Ticks per state (60 detik). Lebih = STUCK
 
 CRUISE_SPEED    = 0.5        # m/s — Kecepatan maju utama (PELAN = PRESISI)
-YAW_SPEED       = 20.0       # deg/s — Kecepatan belok (PELAN = PRESISI)
 
 # ========================
 # MISSION CONTEXT
@@ -110,12 +109,6 @@ async def run_failsafes(drone, ctx):
 # =================================================================
 # HELPER
 # =================================================================
-def yaw_difference(current, start):
-    diff = abs(current - start)
-    if diff > 180:
-        diff = 360 - diff
-    return diff
-
 def altitude_hold():
     """Return up_cmd untuk maintain altitude konstan."""
     z_err = TARGET_ALTITUDE - state.z
@@ -129,34 +122,9 @@ def reset_state_anchor(ctx):
     ctx.state_ticks = 0
 
 # ---------------------------------------------------------
-# 0. YAW RIGHT (Belok kanan dari Aruco 1 ke arah Double Gate)
-# ---------------------------------------------------------
-class YawRight(BaseState):
-    def __init__(self):
-        self.target_angle = 90.0   # HARDCODE: Derajat belok kanan
-        self.start_yaw = None
-        
-    async def execute(self, drone, ctx):
-        up_cmd = altitude_hold()
-        
-        if self.start_yaw is None:
-            self.start_yaw = state.yaw
-            print(f"[AUTOPILOT] ➡️ YAW RIGHT dimulai! Heading: {self.start_yaw:.1f}°, Target: +{self.target_angle}°")
-        
-        diff = yaw_difference(state.yaw, self.start_yaw)
-        
-        if diff >= self.target_angle - 3.0:  # Toleransi 3 derajat
-            print(f"[AUTOPILOT] ✅ YAW RIGHT SELESAI! ({diff:.1f}°). Gas ke Double Gate!")
-            self.start_yaw = None
-            reset_state_anchor(ctx)
-            ctx.state_phase = "PUNCH_DOUBLE_GATE"
-            return
-        
-        print(f"[AUTOPILOT] [YAW RIGHT] {diff:.1f}° / {self.target_angle}°")
-        await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=YAW_SPEED)
-
-# ---------------------------------------------------------
 # 1. PUNCH DOUBLE GATE (Maju lurus X meter nembus gawang)
+# ---------------------------------------------------------
+# PILOT LURUSIN MONCONG KE GAWANG → KETEK CH6 → AI GAS LURUS!
 # ---------------------------------------------------------
 class PunchDoubleGate(BaseState):
     def __init__(self):
@@ -222,41 +190,15 @@ class DropMedkit(BaseState):
             print(f"[AUTOPILOT] [DROP MEDKIT] ⏳ Nunggu manusia... Sisa: {remaining:.0f} detik")
         
         if self.timeout_counter > self.wait_ticks:
-            print("[AUTOPILOT] ✅ Jeda selesai! Gas belok kiri ke Triple Gate!")
+            print("[AUTOPILOT] ✅ Jeda selesai! KEMBALI KE PILOT. Arahin moncong ke Triple Gate, lalu ketek CH6!")
             self.timeout_counter = 0
             self.servo_opened = False
-            reset_state_anchor(ctx)
-            ctx.state_phase = "YAW_LEFT"
+            ctx.state_phase = "IDLE"  # BALIK KE PILOT! Pilot lurusin ke Triple Gate
 
 # ---------------------------------------------------------
-# 4. YAW LEFT (Belok kiri dari Drop Box ke arah Triple Gate)
+# 4. PUNCH TRIPLE GATE (Maju lurus X meter nembus gawang)
 # ---------------------------------------------------------
-class YawLeft(BaseState):
-    def __init__(self):
-        self.target_angle = 30.0   # HARDCODE: Derajat belok kiri (UKUR DI LAPANGAN!)
-        self.start_yaw = None
-        
-    async def execute(self, drone, ctx):
-        up_cmd = altitude_hold()
-        
-        if self.start_yaw is None:
-            self.start_yaw = state.yaw
-            print(f"[AUTOPILOT] ⬅️ YAW LEFT dimulai! Heading: {self.start_yaw:.1f}°, Target: -{self.target_angle}°")
-        
-        diff = yaw_difference(state.yaw, self.start_yaw)
-        
-        if diff >= self.target_angle - 3.0:
-            print(f"[AUTOPILOT] ✅ YAW LEFT SELESAI! ({diff:.1f}°). Gas ke Triple Gate!")
-            self.start_yaw = None
-            reset_state_anchor(ctx)
-            ctx.state_phase = "PUNCH_TRIPLE_GATE"
-            return
-        
-        print(f"[AUTOPILOT] [YAW LEFT] {diff:.1f}° / {self.target_angle}°")
-        await flight.send_body_velocity(drone, forward_m_s=0.0, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=-YAW_SPEED)
-
-# ---------------------------------------------------------
-# 5. PUNCH TRIPLE GATE (Maju lurus X meter nembus gawang)
+# PILOT LURUSIN MONCONG KE TRIPLE GATE → KETEK CH6 → AI GAS LURUS!
 # ---------------------------------------------------------
 class PunchTripleGate(BaseState):
     def __init__(self):
@@ -324,11 +266,9 @@ class EmergencyLand(BaseState):
 # =====================================================================
 STATE_REGISTRY = {
     "IDLE": None,
-    "YAW_RIGHT": YawRight(),
     "PUNCH_DOUBLE_GATE": PunchDoubleGate(),
     "PUNCH_TO_DROPBOX": PunchToDropBox(),
     "DROP_MEDKIT": DropMedkit(),
-    "YAW_LEFT": YawLeft(),
     "PUNCH_TRIPLE_GATE": PunchTripleGate(),
     "PUNCH_TO_FINISH": PunchToFinish(),
     "LANDING_SEQUENCE": LandingSequence(),
