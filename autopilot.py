@@ -113,10 +113,10 @@ class Autopilot:
                 self.ctx.mission_start_time = time.time()
                 
                 if pwm_knob < 1300:
-                    print("[AUTOPILOT] 🤖 FULL COURSE: Takeoff + Gas ke Double Gate!")
-                    await flight.arm_and_takeoff(self.master, altitude_m=1.0)
+                    await flight.set_mode_guided(self.master)
                     reset_state_anchor(self.ctx)
                     self.ctx.state_phase = "PUNCH_DOUBLE_GATE"
+                    print("[AUTOPILOT] 🤖 FULL COURSE: Ambil alih dari Aruco 1 -> Gas ke Double Gate!")
                 elif 1400 < pwm_knob < 1600:
                     await flight.set_mode_guided(self.master)
                     reset_state_anchor(self.ctx)
@@ -128,10 +128,10 @@ class Autopilot:
                     self.ctx.state_phase = "PUNCH_TRIPLE_GATE"
                     print("[AUTOPILOT] 🤖 RESUME: Gas Lurus ke Triple Gate!")
                 else:
-                    print("[AUTOPILOT] 🤖 FULL COURSE: Takeoff + Gas ke Double Gate! (Fallback)")
-                    await flight.arm_and_takeoff(self.master, altitude_m=1.0)
+                    await flight.set_mode_guided(self.master)
                     reset_state_anchor(self.ctx)
                     self.ctx.state_phase = "PUNCH_DOUBLE_GATE"
+                    print("[AUTOPILOT] 🤖 FULL COURSE (Fallback): Ambil alih dari Aruco 1 -> Gas ke Double Gate!")
 
             # === FAILSAFE CHECK (SETIAP TICK!) ===
             is_emergency = await run_failsafes(self.master, self.ctx)
