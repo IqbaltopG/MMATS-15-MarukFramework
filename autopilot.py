@@ -116,24 +116,24 @@ class Autopilot:
                     print("[AUTOPILOT] 🤖 FULL AUTO TAKEOFF SEQUENCE INITIATED!")
                     await flight.arm_and_takeoff(self.master, altitude_m=1.0)
                     reset_state_anchor(self.ctx)
-                    self.ctx.state_phase = "PUNCH_DOUBLE_GATE"
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KIRI -> Gas Lurus ke Double Gate!")
+                    self.ctx.state_phase = "YAW_RIGHT"
+                    print("[AUTOPILOT] 🤖 FULL COURSE: KNOB KIRI -> Belok Kanan + Full Auto!")
                 elif 1400 < pwm_knob < 1600:
                     await flight.set_mode_guided(self.master)
                     reset_state_anchor(self.ctx)
-                    self.ctx.state_phase = "DROP_MEDKIT"
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB TENGAH -> Drop Medkit!")
+                    self.ctx.state_phase = "PUNCH_DOUBLE_GATE"
+                    print("[AUTOPILOT] 🤖 RESUME: KNOB TENGAH -> Gas Lurus ke Double Gate! (Pilot udah lurusin)")
                 elif pwm_knob > 1700:
                     await flight.set_mode_guided(self.master)
                     reset_state_anchor(self.ctx)
                     self.ctx.state_phase = "PUNCH_TRIPLE_GATE"
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: KNOB KANAN -> Gas Lurus ke Triple Gate!")
+                    print("[AUTOPILOT] 🤖 RESUME: KNOB KANAN -> Gas Lurus ke Triple Gate! (Pilot udah lurusin)")
                 else:
                     print("[AUTOPILOT] 🤖 FULL AUTO TAKEOFF SEQUENCE INITIATED (Fallback)!")
                     await flight.arm_and_takeoff(self.master, altitude_m=1.0)
                     reset_state_anchor(self.ctx)
-                    self.ctx.state_phase = "PUNCH_DOUBLE_GATE"
-                    print("[AUTOPILOT] 🤖 CYBORG RESUME: Default -> Gas Lurus ke Double Gate!")
+                    self.ctx.state_phase = "YAW_RIGHT"
+                    print("[AUTOPILOT] 🤖 FULL COURSE: Default -> Belok Kanan + Full Auto!")
 
             # === FAILSAFE CHECK (SETIAP TICK!) ===
             is_emergency = await run_failsafes(self.master, self.ctx)
