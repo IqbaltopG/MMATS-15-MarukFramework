@@ -71,8 +71,14 @@ class FindDoubleGate(BaseState):
                     ctx.has_seen_target = False
                     return
                 else:
-                    print(f"[AUTOPILOT] Gawang hilang! Blind punch sisa jarak... ({ctx.dist_flown:.2f}/{self.punch_distance}m)")
-                    await flight.send_body_velocity(drone, forward_m_s=0.8, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
+                    # ACTIVE LIDAR ANTI-DRIFT (Kalo jarak lidar di bawah 2 meter, berarti ngelewatin tiang gawang)
+                    strafe_cmd = 0.0
+                    if state.lidar_left < 2.0 or state.lidar_right < 2.0:
+                        strafe_cmd = (state.lidar_right - state.lidar_left) * 0.1
+                        strafe_cmd = clamp(strafe_cmd, -0.3, 0.3)
+                        
+                    print(f"[AUTOPILOT] Gawang hilang! Blind punch sisa jarak... ({ctx.dist_flown:.2f}/{self.punch_distance}m). Anti-Drift: {strafe_cmd:.2f}")
+                    await flight.send_body_velocity(drone, forward_m_s=0.8, right_m_s=strafe_cmd, down_m_s=up_cmd, yaw_deg_s=0.0)
                     return
             
             print("[AUTOPILOT] Nyari Double Gate... Terbang lurus pelan.")
@@ -236,8 +242,14 @@ class FindTripleGate(BaseState):
                     ctx.has_seen_target = False
                     return
                 else:
-                    print(f"[AUTOPILOT] Gawang hilang! Blind punch sisa jarak... ({ctx.dist_flown:.2f}/{self.punch_distance}m)")
-                    await flight.send_body_velocity(drone, forward_m_s=0.8, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
+                    # ACTIVE LIDAR ANTI-DRIFT 
+                    strafe_cmd = 0.0
+                    if state.lidar_left < 2.0 or state.lidar_right < 2.0:
+                        strafe_cmd = (state.lidar_right - state.lidar_left) * 0.1
+                        strafe_cmd = clamp(strafe_cmd, -0.3, 0.3)
+                        
+                    print(f"[AUTOPILOT] Gawang hilang! Blind punch sisa jarak... ({ctx.dist_flown:.2f}/{self.punch_distance}m). Anti-Drift: {strafe_cmd:.2f}")
+                    await flight.send_body_velocity(drone, forward_m_s=0.8, right_m_s=strafe_cmd, down_m_s=up_cmd, yaw_deg_s=0.0)
                     return
             
             print("[AUTOPILOT] Nyari Triple Gate... Terbang lurus pelan.")
