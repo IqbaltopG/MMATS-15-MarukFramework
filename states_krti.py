@@ -33,37 +33,46 @@ class BaseState:
 # 1. DOUBLE GATE
 # ---------------------------------------------------------
 class FindDoubleGate(BaseState):
+    def __init__(self):
+        self.punch_distance = 4.0 # BERAPA METER DARI AWAL NGE-LOCK SAMPAI NEMBUS GAWANG
+        
     async def execute(self, drone, ctx):
         front_status = state.target_front.get("status", "LOST")
         front_class = state.target_front.get("class", "none")
         front_err_x = state.target_front.get("error_x", 0)
-        front_area = state.target_front.get("area", 0)
 
-        # Alt Hold Z = -1.5m
         z_err = -1.5 - state.z
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         if front_status == "LOCKED" and front_class == "DoubleGate":
-            ctx.has_seen_target = True
-            ctx.timeout_counter = 0
-            ctx.target_locked_area = front_area
-            
+            if not ctx.has_seen_target:
+                # Kunci koordinat AWAL pas pertama kali ngelihat gawang!
+                ctx.blind_start_x = state.x
+                ctx.blind_start_y = state.y
+                ctx.has_seen_target = True
+                
             yaw_cmd = front_err_x * ctx.kp_yaw
             fwd_cmd = 0.8
             
             # Kalau miring banget, rem bentar buat lurusin moncong
-            if abs(front_err_x) > 50 and front_area < 50000:
+            if abs(front_err_x) > 50:
                 fwd_cmd = 0.2
                 
-            print(f"[AUTOPILOT] [DOUBLE GATE] Centering... Area: {front_area}")
+            ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
+            print(f"[AUTOPILOT] [DOUBLE GATE] Centering... Terbang: {ctx.dist_flown:.2f}/{self.punch_distance}m")
             await flight.send_body_velocity(drone, forward_m_s=fwd_cmd, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=yaw_cmd)
         else:
             if ctx.has_seen_target:
-                # Gawang hilang! Kalo area sebelumnya gede (udah deket), berarti sukses nembus
-                if ctx.target_locked_area > 80000:
-                    print("[AUTOPILOT] NEMBUS DOUBLE GATE! Lanjut nyari Red Drop Box...")
+                # Kalau hilang di tengah jalan, tetep hitung jarak dari awal nge-lock
+                ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
+                if ctx.dist_flown > self.punch_distance:
+                    print(f"[AUTOPILOT] NEMBUS DOUBLE GATE! (Jarak {ctx.dist_flown:.2f}m tercapai). Lanjut Drop Box...")
                     ctx.state_phase = "FIND_DROPBOX"
                     ctx.has_seen_target = False
+                    return
+                else:
+                    print(f"[AUTOPILOT] Gawang hilang! Blind punch sisa jarak... ({ctx.dist_flown:.2f}/{self.punch_distance}m)")
+                    await flight.send_body_velocity(drone, forward_m_s=0.8, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
                     return
             
             print("[AUTOPILOT] Nyari Double Gate... Terbang lurus pelan.")
@@ -193,33 +202,42 @@ class DeadReckoningHover(BaseState):
 # 4. TRIPLE GATE
 # ---------------------------------------------------------
 class FindTripleGate(BaseState):
+    def __init__(self):
+        self.punch_distance = 5.0 # JARAK NEMBUS TRIPLE GATE DARI PERTAMA KALI NGE-LOCK
+        
     async def execute(self, drone, ctx):
         front_status = state.target_front.get("status", "LOST")
         front_class = state.target_front.get("class", "none")
         front_err_x = state.target_front.get("error_x", 0)
-        front_area = state.target_front.get("area", 0)
 
         z_err = -1.5 - state.z
         up_cmd = clamp(z_err * 0.5, -0.5, 0.5)
 
         if front_status == "LOCKED" and front_class == "TripleGate":
-            ctx.has_seen_target = True
-            ctx.timeout_counter = 0
-            ctx.target_locked_area = front_area
+            if not ctx.has_seen_target:
+                ctx.blind_start_x = state.x
+                ctx.blind_start_y = state.y
+                ctx.has_seen_target = True
             
             yaw_cmd = front_err_x * ctx.kp_yaw
             fwd_cmd = 0.8
-            if abs(front_err_x) > 50 and front_area < 50000:
+            if abs(front_err_x) > 50:
                 fwd_cmd = 0.2
                 
-            print(f"[AUTOPILOT] [TRIPLE GATE] Centering... Area: {front_area}")
+            ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
+            print(f"[AUTOPILOT] [TRIPLE GATE] Centering... Terbang: {ctx.dist_flown:.2f}/{self.punch_distance}m")
             await flight.send_body_velocity(drone, forward_m_s=fwd_cmd, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=yaw_cmd)
         else:
             if ctx.has_seen_target:
-                if ctx.target_locked_area > 80000:
-                    print("[AUTOPILOT] NEMBUS TRIPLE GATE! Lanjut nyari Aruco Finish...")
+                ctx.dist_flown = calculate_distance(ctx.blind_start_x, ctx.blind_start_y, state.x, state.y)
+                if ctx.dist_flown > self.punch_distance:
+                    print(f"[AUTOPILOT] NEMBUS TRIPLE GATE! (Jarak {ctx.dist_flown:.2f}m). Lanjut Aruco Finish...")
                     ctx.state_phase = "FIND_ARUCO_3"
                     ctx.has_seen_target = False
+                    return
+                else:
+                    print(f"[AUTOPILOT] Gawang hilang! Blind punch sisa jarak... ({ctx.dist_flown:.2f}/{self.punch_distance}m)")
+                    await flight.send_body_velocity(drone, forward_m_s=0.8, right_m_s=0.0, down_m_s=up_cmd, yaw_deg_s=0.0)
                     return
             
             print("[AUTOPILOT] Nyari Triple Gate... Terbang lurus pelan.")
